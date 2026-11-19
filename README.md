@@ -13,10 +13,19 @@ python -m qchem_eval judge  a.out b.out --json   # 机器可读（Agent 消费�
 python -m qchem_eval compare opt.log sp.log      # 跨阶段一致性
 python -m qchem_eval rules                       # 打印规则清单
 python -m qchem_eval bench  xxx.log              # 解析性能 vs cclib
+
+# 可观测性（每个子命令都支持，放在子命令后面更顺手）
+judge a.out b.out --log-level INFO --log-json --log-file run.log \
+                  --metrics-out metrics.json
 ```
 
-退出码：`0` 通过 / `1` 有 FAIL / `2` 文件不存在 / `3` 规则清单本身有错。
-`3` 是单独留出来的 —— 「配置写错了」和「这批计算不合格」被 CI 混成一个码就分不开了。
+退出码：`0` 无 FAIL / `1` 有 FAIL / `2` 路径不存在 / `3` 配置错（规则清单或日志初始化）
+/ `4` 有文件处理失败。**结论和故障不用同一个码** —— `1` 是「这批计算不合格」，
+`2`/`3`/`4` 是「你调用错了 / 配置错了 / 我这边出了故障」，CI 和 Agent 必须能分开处理。
+
+> 注意 `4` 实际只由「非普通文件」（目录、管道、设备）触发。日志内容完全读不懂
+> 时解析器走 `errors="replace"` 降级成 UNKNOWN，**退出码仍是 0**。要让 CI 拦住
+> 这种，得看 summary 里的 `verdicts.unknown`，不能只看 returncode。
 
 ## 两条独立的判定机制（别混）
 
@@ -76,7 +85,9 @@ qchem_eval/
   rules/evaluator.py     求值 + 加载期校验 + 最坏优先聚合
   rules/signatures.py    错误块 → 指纹匹配
   engine.py              L4 决策 + 跨阶段核对
-  cli.py                 报告渲染
+  obs.py                 trace/span + 进程级日志（只挂自己的 handler，不动 root）
+  metrics.py             批量汇总（纯函数：不读文件、不打日志，服务端也能复用）
+  cli.py                 报告渲染 + 退出码
 tools/
   verify_signatures.py   「照抄官方」的可复核证据
   synth_failures.py      带标签失败样本生成（嫁接 + 变异）
@@ -194,7 +205,7 @@ VQM24 统计了 262,542 次失败、发布出去的 835,947 条全是成功的�
 
 ## 出问题会不会吭声（可观测性）
 
-这一层的设计原则是：**宁可报错，也不许"看起来正常"。** 已落地三处硬约束：
+这一层的设计原则是：**宁可报错，也不许"看起来正常"。** 已落地六处硬约束：
 
 1. **解析侧不静默**。`CalcData.unparsed_hits` 记「日志里明明有、是我没取出来」，
    收尾时提升为 `parse_warnings`（面向用户）。和 `parse_warnings` 原本的语义
@@ -205,9 +216,43 @@ VQM24 统计了 262,542 次失败、发布出去的 835,947 条全是成功的�
    区分开 —— 配置错和被测体系不合格不是同一件事。
 3. **`applies` 求值异常归 `unknown` 而不是 `na`**。`na` 不计入覆盖率分母，
    按 `na` 处理等于让这条规则从指标里蒸发。
+4. **日志走 stderr，默认只报 WARNING**。stdout 是判定报告，Agent 会
+   `judge x --json | jq .verdict`；日志混进 stdout 会让管道直接失败——这是
+   可观测性最常见的自伤。默认安静是因为一个质检工具如果满屏，用户第一件事
+   就是永久关掉日志，那等于没有日志。
+5. **`trace_id` 同时出现在日志和报告里**。`provenance.trace_id` / `span_id` 和
+   日志行 `[f3a9c21e/007]` 是同一个值，`grep f3a9c21e` 就能把一次运行的全部
+   上下文捞出来；反过来看到一条 ERROR 也能定位到具体哪份报告的结论。
+   span 用递增序号而不是 uuid：一眼看出「第 7 份」，跳号说明中间有文件没进到这里。
+6. **批量汇总算的是「这一批到底怎么样」**，而不只是「每份怎么样」。跑 300 份时
+   真正要看的是：多少份该转人工、哪条规则老在报 UNKNOWN（那几乎总是解析器的缺口）、
+   哪条规则命中最多、耗时分布、以及**有几个文件直接没跑成**——后者不进 results，
+   不单独统计就会静默消失。
 
-尚未做的：进程级 `logging`（现在诊断只随返回值给出，进程外看不见）、`trace_id`
-与批量汇总 metrics。这两项要先选型（标准库 `logging` / `loguru` / `structlog`）。
+```bash
+$ judge a.out b.out --log-level INFO --log-json --log-file run.log --metrics-out m.json
+
+ 批量汇总   trace aa556a0c    2 个文件（成功 2，处理失败 0）
+ 结论   通过 0   有警告 1   不通过 1   判不了 0
+ 评分   均值 42.5   中位 85   最低 0
+ 耗时   wall 127.6 ms   解析合计 7.9 ms（均值 4.0 / p95 5.3 / 最慢 5.3）
+ 吞吐   2209 行   0.28 M 行/秒
+ 覆盖率 均值 92%   最低 84%
+ 命中   共 6 条（critical 3 / major 2 / minor 1 / info 0）   签名层 1 条
+```
+
+耗时给 **p95 不给平均值**：一份 300 MB 的日志能把均值彻底带偏。反过来，
+样本少于 20 份时 nearest-rank 的 p95 就等于最大值——这不是 bug，但别拿小批量的
+p95 当分位数解读（`tests/test_obs.py::test_p95_degrades_to_max_on_tiny_batches`
+把这个行为钉住了）。
+
+日志格式两种：`TextFormatter`（人读，`10:27:57.604 INFO [65ece2e6/001] engine.parse.done n_lines=1742 ms=3.9`）
+和 `--log-json`（一行一条 JSONL，供 filebeat/loki 采集）。事件名用点号
+（`engine.parse.done`）而不是整句 —— 它同时是检索键和 JSON 字段名，写成句子就没法聚合。
+
+不引 `loguru` / `structlog`：本包依赖只有 `pyyaml`，装它的人机器上不一定有。
+标准库 `logging` 的 Formatter/Handler 组合够用，而且**只挂自己的 handler、不动 root**
+——调用方（FastAPI / Agent 后端）有自己的日志配置，从这里 `basicConfig()` 属于越界。
 
 ## 还没做
 
@@ -216,7 +261,6 @@ VQM24 统计了 262,542 次失败、发布出去的 835,947 条全是成功的�
 - L3 模型层（`features.py` 空着）—— 前置条件是先跑通 GBC/TabPFN 基线
 - D-05 的容差目前硬编码 1 kcal/mol，未按体系档位区分
 - 签名层只覆盖「有明确错误文本」的崩溃；纯数值崩坏（无错误行）只靠 SIG-NOTERM 兜底
-- 进程级日志 / `trace_id` / 批量汇总指标（诊断目前只随返回值走）
 - C 类（方法/基组化学合理性）目前只覆盖**基组**：极化函数、ECP、弥散函数、声明值 vs 实际值。
   泛函选择是否适配体系（比如开壳层过渡金属用纯 GGA）、色散校正该不该加，都还没有规则 ——
   这部分光看日志判不了，得结合体系性质，属于「需要人先定判据」的范围

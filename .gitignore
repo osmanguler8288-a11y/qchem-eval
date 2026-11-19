@@ -1,0 +1,14 @@
+# 本地缓存（spyder profile 之类的 IDE 产物）
+/.cache
+/.pytest_cache
+
+# Python 产物
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# 运行产物：批量跑起来会越积越多，不该进版本库
+metrics.json
+run.log

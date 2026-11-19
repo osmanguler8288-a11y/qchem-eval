@@ -247,6 +247,11 @@ def test_parser_beats_cclib_on_speed():
     取 6 次里的最小值：干扰只会让单次耗时变长，不会变短。
     当前基线约 4.2x（纯读 1.9 ms / 解析 8.1 ms），阈值 8.0 留了约两倍余量 ——
     解析器若退化成两倍慢（比如不小心引入 O(n^2)），比值会直接撞线。
+
+    为什么还要跨轮取最小比值：分母只有 1.9 ms，一次 GC 或线程切换就能把它
+    抬高 30%，而分子分母**不是同时**被抬高的（两段测量串行执行），于是比值
+    偶发冲到 8 以上。实测同一份代码连跑 10 次，有 1 次红。取三轮里的最小比值
+    不需要放松阈值就消掉了这个噪声——真退化是三轮全高，噪声只污染其中一轮。
     """
     import time
 
@@ -266,10 +271,16 @@ def test_parser_beats_cclib_on_speed():
     parse(p)                      # 预热：首次要建表、编译正则
     read_only()
     n_lines = read_only()
-    t_parse = best_ms(lambda: parse(p))
-    t_base = best_ms(read_only)
 
-    ratio = t_parse / t_base
+    ratio = float("inf")
+    t_parse = t_base = 0.0
+    for _ in range(3):
+        tp = best_ms(lambda: parse(p))
+        tb = best_ms(read_only)
+        r = tp / tb
+        if r < ratio:
+            ratio, t_parse, t_base = r, tp, tb
+
     rate = n_lines / t_parse * 1000 / 1e6       # 仅供参考，不做断言
     assert ratio < 8.0, (
         f"解析耗时是纯读文件的 {ratio:.1f} 倍（基线约 4.2 倍，"

@@ -5,19 +5,26 @@
   python -m qchem_eval compare opt.log sp.log     跨阶段一致性
   python -m qchem_eval rules                      打印规则清单
   python -m qchem_eval bench x.out                自研解析器 vs cclib 计时
+
+  --log-level INFO --log-json --log-file run.log  进程级日志（默认只报 warning）
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 import time
 from pathlib import Path
 
 from .engine import evaluate_file, evaluate_pair
+from .metrics import render_summary, summarize
+from .obs import get_logger, log_event, new_trace, setup_logging, span
 from .rules import RuleCatalogError, load_ruleset
 from .schema import EvalResult, Severity, Verdict
+
+_log = get_logger("cli")
 
 # ---------------------------------------------------------------- 终端着色
 
@@ -213,27 +220,95 @@ def render_pair(result: EvalResult) -> str:
 # ---------------------------------------------------------------- 子命令
 
 def cmd_judge(args: argparse.Namespace) -> int:
-    results = []
+    """逐份判定，并给出批量汇总。
+
+    单个文件坏掉不能让整批失败：跑 300 份时，一份编码坏掉就把前面 299 份的
+    结果全丢掉，是最难忍的一种失败。所以异常按文件隔离、记进 errors，
+    最后用**独立的退出码 4** 告诉调用方「有文件没跑成」——不能混进 1，
+    1 的语义是「这批计算质量不合格」，那是结论，不是故障。
+
+    退出码：0 无 FAIL｜1 有 FAIL｜2 路径不存在｜4 有文件处理失败
+    """
+    t_start = time.perf_counter()
+    trace = new_trace()
+    log_event(_log, "run.start", cmd="judge", n_files=len(args.paths))
+
+    results: list[EvalResult] = []
+    errors: list[dict] = []
+    missing = 0
+
     for p in args.paths:
-        if not Path(p).exists():
-            print(f"文件不存在: {p}", file=sys.stderr)
-            return 2
-        results.append(evaluate_file(p))
+        with span():
+            path = Path(p)
+            if not path.exists():
+                # 路径不存在是调用方的问题（glob 没展开、路径拼错），不是处理失败。
+                # 但仍然记下来：否则 `judge *.log` 在空目录下会「成功」返回 0。
+                print(f"文件不存在: {p}", file=sys.stderr)
+                log_event(_log, "file.missing", level=logging.ERROR, path=p)
+                missing += 1
+                continue
+            if not path.is_file():
+                # 目录 / 管道 / 设备文件。解析器对这类输入会**降级**成「格式无法识别」
+                # 并给出 UNKNOWN 报告 —— 技术上是稳的，但告诉用户「你的日志格式不对」
+                # 是错的诊断：真实原因是他把一个目录当文件传进来了。在这里拦住，
+                # 错误分类才准确。
+                print(f"不是普通文件: {p}", file=sys.stderr)
+                log_event(_log, "file.not_a_file", level=logging.ERROR, path=p)
+                errors.append({"source": str(p), "error": "不是普通文件（目录/管道/设备）"})
+                continue
+            try:
+                results.append(evaluate_file(p))
+            except Exception as exc:      # noqa: BLE001 —— 一份坏文件不该拖垮整批
+                log_event(_log, "file.error", level=logging.ERROR, path=p,
+                          error=f"{type(exc).__name__}: {exc}", exc_info=True)
+                errors.append(
+                    {"source": str(p), "error": f"{type(exc).__name__}: {exc}"}
+                )
+
+    wall_ms = (time.perf_counter() - t_start) * 1000
+    summary = summarize(results, errors, wall_ms, trace)
+    log_event(_log, "run.done", n_ok=len(results), n_error=len(errors),
+              n_missing=missing, wall_ms=round(wall_ms, 1))
+
+    if args.metrics_out:
+        out = Path(args.metrics_out)
+        if out.parent and not out.parent.exists():
+            out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(summary, ensure_ascii=False, indent=2),
+                       encoding="utf-8")
+        log_event(_log, "metrics.written", path=str(out))
 
     if args.json:
         payload = [r.to_dict() for r in results]
-        print(json.dumps(payload if len(payload) > 1 else payload[0],
-                         ensure_ascii=False, indent=2))
+        if len(results) == 1 and not errors:
+            # 单文件保持裸对象：`judge x.log --json | jq .verdict` 是最常见的用法，
+            # 这里套一层信封会让所有现有脚本失效，收益却为零。
+            print(json.dumps(payload[0], ensure_ascii=False, indent=2))
+        else:
+            print(json.dumps({"summary": summary, "results": payload},
+                             ensure_ascii=False, indent=2))
     else:
         for r in results:
             print(render(r, show_unknown=not args.quiet))
+        if len(results) > 1 or errors or missing:
+            print(render_summary(summary))
 
+    if missing:
+        return 2
+    if errors:
+        return 4
     # 有 FAIL 时返回非 0，方便挂到 CI / Agent 的检查点
     return 1 if any(r.verdict is Verdict.FAIL for r in results) else 0
 
 
 def cmd_compare(args: argparse.Namespace) -> int:
-    r = evaluate_pair(args.a, args.b)
+    new_trace()
+    with span():
+        log_event(_log, "run.start", cmd="compare", a=args.a, b=args.b)
+        r = evaluate_pair(args.a, args.b)
+        log_event(_log, "engine.result", verdict=r.verdict.value, score=r.score,
+                  findings=[f.rule_id for f in r.findings],
+                  level=logging.WARNING if r.verdict is Verdict.FAIL else logging.INFO)
     if args.json:
         print(json.dumps(r.to_dict(), ensure_ascii=False, indent=2))
     else:
@@ -338,6 +413,22 @@ def _first(v):
     return v
 
 
+def _add_log_args(p: argparse.ArgumentParser) -> None:
+    """每个子命令都挂一份日志参数。
+
+    放在子命令而不是只放顶层，是因为 `judge x.log --log-level INFO` 是人的
+    自然写法；只支持 `--log-level INFO judge x.log` 会让人以为没有这个功能。
+    """
+    p.add_argument(
+        "--log-level", default="WARNING",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="日志级别（默认 WARNING：只在「这份不能用」或本工具自身出问题时出声）",
+    )
+    p.add_argument("--log-file", default=None, help="日志同时写入文件")
+    p.add_argument("--log-json", action="store_true",
+                   help="日志用 JSON Lines（便于后端采集）")
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="qchem-eval",
@@ -349,19 +440,25 @@ def build_parser() -> argparse.ArgumentParser:
     j.add_argument("paths", nargs="+")
     j.add_argument("--json", action="store_true", help="输出 JSON")
     j.add_argument("--quiet", action="store_true", help="不显示未判定明细")
+    j.add_argument("--metrics-out", default=None,
+                   help="把批量汇总指标另存为 JSON 文件")
+    _add_log_args(j)
     j.set_defaults(func=cmd_judge)
 
     c = sub.add_parser("compare", help="跨阶段一致性核对")
     c.add_argument("a")
     c.add_argument("b")
     c.add_argument("--json", action="store_true")
+    _add_log_args(c)
     c.set_defaults(func=cmd_compare)
 
     r = sub.add_parser("rules", help="打印规则清单")
+    _add_log_args(r)
     r.set_defaults(func=cmd_rules)
 
     b = sub.add_parser("bench", help="解析性能对比（自研 vs cclib）")
     b.add_argument("path")
+    _add_log_args(b)
     b.set_defaults(func=cmd_bench)
 
     return p
@@ -370,11 +467,20 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        setup_logging(args.log_level, args.log_file, args.log_json)
+    except OSError as exc:
+        # 日志文件建不出来属于配置错误，不能降级成「日志丢了但照常跑」——
+        # 那样运维永远不知道自己看到的日志其实是截断的（甚至根本没有）。
+        print(f"日志初始化失败：{exc}", file=sys.stderr)
+        return 3
+
+    try:
         return args.func(args)
     except RuleCatalogError as exc:
         # 规则清单本身有错属于**启动期配置错误**，不是评测结论。
         # 用独立的退出码 3 与「有 FAIL 所以返回 1」区分开，否则 CI 会把
         # 「配置写错了」误读成「这批计算质量不合格」。
+        log_event(_log, "catalog.invalid", level=logging.ERROR, error=str(exc))
         print(f"规则清单加载失败：\n{exc}", file=sys.stderr)
         return 3
 

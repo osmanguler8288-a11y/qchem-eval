@@ -8,9 +8,11 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 
+from .obs import current_span, current_trace, get_logger, log_event
 from .parsers import parse
 from .rules import (
     ACTION_PRIORITY,
@@ -22,6 +24,13 @@ from .rules import (
 )
 from .rules.signatures import load_signatures, match as match_signatures
 from .schema import Action, CalcData, EvalResult, Finding, Severity, Verdict
+
+_log = get_logger("engine")
+
+# 单份解析超过这个时长记一条 warning。
+# 汇总里给的是 p95 —— 平均值会被一份超大日志完全带偏；但 p95 也只是个数字，
+# 想定位到具体是哪份文件慢，还得靠这条逐文件的 warning。
+SLOW_PARSE_MS = 1500.0
 
 
 def derive_family(d: CalcData) -> str:
@@ -54,6 +63,30 @@ def _evaluate(d: CalcData, t_parse_ms: float, n_lines: int) -> EvalResult:
     n_total = len(outcomes)
     applicable = n_total - n_na
 
+    log_event(
+        _log, "engine.rules.done",
+        n_total=n_total, applicable=applicable, na=n_na,
+        hit=n_hit, unknown=n_unknown,
+        coverage=round((applicable - n_unknown) / applicable, 3) if applicable else 0.0,
+        ms=round(t_eval_ms, 2),
+        # 判不了的规则 ID 全列出来。它们不是"没问题"，是"没判" ——
+        # 批量跑的时候这一行直接指出哪些检查项在这批数据上根本不生效。
+        unknown_rules=[o.rule.id for o in outcomes if o.status == "unknown"],
+    )
+    if sig_findings:
+        log_event(_log, "engine.signature.hits",
+                  ids=[f.rule_id for f in sig_findings])
+
+    log_event(
+        _log, "engine.result",
+        verdict=verdict.value, score=score, action=action.value,
+        abstain=abstain, findings=[f.rule_id for f in findings],
+        # 只有 FAIL 抬到 WARNING 级：默认级别下 stderr 应当只在「这份不能用」
+        # 或者「本工具自己出问题」时才响。pass_with_warning 在报告里已经写了，
+        # 日志再重复一遍，300 份批量就是 300 行噪音，用户会直接把日志关掉。
+        level=logging.WARNING if verdict is Verdict.FAIL else logging.INFO,
+    )
+
     return EvalResult(
         source=d.source,
         verdict=verdict,
@@ -83,15 +116,49 @@ def _evaluate(d: CalcData, t_parse_ms: float, n_lines: int) -> EvalResult:
             "parser": f"{d.software}/single-pass",
             "catalog_version": rs.version,
             "n_rules": n_total,
+            # 与日志里同一个 trace/span：报告落库之后，还能靠它把当初那几行
+            # 日志捞出来。没有这两个 id 的日志只是一堆没主的时间戳。
+            "trace_id": current_trace(),
+            "span_id": current_span(),
         },
     )
 
 
 def evaluate_file(path: str | Path) -> EvalResult:
-    """评测一份输出文件。"""
+    """评测一份输出文件。
+
+    解析是整条链路里唯一接触文件的环节，也是最容易出问题的地方（格式不认识、
+    编码坏掉、日志被 append 过）。所以这里把「解析器看到了什么」记全：
+    行数、耗时、它自己承认没解析出来的字段。
+    """
     t0 = time.perf_counter()
     d, n_lines = parse(path)
     t_parse_ms = (time.perf_counter() - t0) * 1000
+
+    name = str(path)
+    log_event(
+        _log, "engine.parse.done",
+        path=name, n_lines=n_lines, ms=round(t_parse_ms, 1),
+        mlines_per_s=round(n_lines / t_parse_ms / 1000, 2) if t_parse_ms > 0 else 0.0,
+        software=d.software,
+    )
+
+    if d.software == "unknown":
+        # 不是「文件不存在」这种明确错误，而是「读到了但认不出来」——
+        # 这条如果不记 warning，报告只会显示一堆 UNKNOWN，看起来像用户的日志有问题。
+        log_event(_log, "engine.parse.unrecognised", level=logging.WARNING,
+                  path=name, warnings=d.parse_warnings[:3])
+    if d.unparsed_hits:
+        # 解析器自己承认没吃下的字段。这是**我方**的缺陷信号，必须显式记出来，
+        # 不能只躺在 metrics.parse_warnings 里等有人去翻。
+        log_event(_log, "engine.parser.gap", level=logging.WARNING,
+                  path=name, n=d.unparsed_hits,
+                  fields=sorted({h["field"] for h in d.unparsed_hits}))
+    if t_parse_ms > SLOW_PARSE_MS:
+        log_event(_log, "engine.parse.slow", level=logging.WARNING,
+                  path=name, ms=round(t_parse_ms, 1), n_lines=n_lines,
+                  mlines_per_s=round(n_lines / t_parse_ms / 1000, 2))
+
     return _evaluate(d, t_parse_ms, n_lines)
 
 
@@ -237,7 +304,13 @@ def evaluate_pair(path_a: str | Path, path_b: str | Path) -> EvalResult:
         },
         timing={"parse": t_parse_ms, "rules": 0.0},
         abstain=verdict is Verdict.UNKNOWN,
-        provenance={"parser": "gaussian/single-pass", "catalog_version": rs.version},
+        provenance={
+            "parser": "gaussian/single-pass",
+            "catalog_version": rs.version,
+            "trace_id": current_trace(),
+            "span_id": current_span(),
+            "pair": [str(path_a), str(path_b)],
+        },
     )
 
 
