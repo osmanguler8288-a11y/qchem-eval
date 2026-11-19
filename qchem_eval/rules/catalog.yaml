@@ -20,7 +20,7 @@
 # =============================================================================
 
 meta:
-  version: "0.6"
+  version: "0.7"
   n_rules: 39
   notes: |
     coverage: A≈90% B≈90% C≈25% D≈75% E≈95%
@@ -58,6 +58,30 @@ meta:
       · 顺手给 CalcData 加字段时把已有的 `route_basis` 字段声明覆盖掉了。
         dataclass 没有 slots，`d.route_basis = ...` 照样赋值成功、vars(d) 照样
         能取到，测试全绿——字段声明没了这件事没有任何表现。已补回。
+
+    v0.7 是第一次**用真实日志校准阈值**（2026-11-19，cu04 上真跑 6 份 opt freq，
+    加进 field_test/calib_out）。工具是 tools/calibrate.py，它不改判定，只把每条
+    阈值在真实样本上的取值分布摊开。这批样本打出了一个判定错误和一处语义错误：
+      · **B-03 判定错误**。原 when 是 `min(d.freqs) < 100`，而虚频是负数，
+        必然小于 100。实测水二聚体 / HF 二聚体在 B3LYP/6-31G(d) 下 opt freq
+        会留下两个虚频（-250.6 / -44.2），于是 B-01 先判了 critical「不是极小点」，
+        B-03 又拿同一个虚频判 minor「低频需准谐振校正」。两者的处方完全相反
+        （低频要做 qs 校正，虚频要重新优化），所以这不只是重复计分，是给错药。
+        改为 `any(0 < f < 100 for f in d.freqs)`：用 any 而不是 `0 < min(...)`，
+        因为一个体系完全可能既有一个虚频、又有一个 50 cm⁻¹ 的实低频模。
+        同时新增派生量 `min_real_freq`——evidence 里若还用 `min_freq`，会打出
+        「存在实频 -250.6 cm⁻¹」这种自相矛盾的话。
+      · **D-09 缺 applies**。它 requires G 与 ZPE，而这两个量只在频率作业里存在。
+        原来没写 applies，于是在单点/opt-only/崩溃日志上全报 unknown —— 实测
+        28 份真实日志里 26 份如此。这不是「缺数据判不了」，是「这类任务没有这两
+        个量」，按项目自己的规则该判 na（不计入覆盖率分母）。26 条 unknown 把
+        「未能判定」清单塞满，真正需要人看的反而被埋。
+      · 校准后确认安全的：A-03 余量 76%、A-04 50%（真实最难样本 25 步 Fe-H2O）、
+        A-06 90%、B-05 23%、B-10 47%、C-02 97%、D-01/D-08 100%、D-07 29%。
+      · 仍然**无法校准**的两条，样本覆盖不够，别当它们已经验过：
+        B-04（小虚频 -50 线）：真实虚频都是 -250 量级，缺 -10~-40 的样本；
+        C-05（HOMO-LUMO gap 0.5 eV）：真实最小 gap 2.18 eV，缺长共轭/双自由基
+        体系。这两条等下一批样本。
 
 rules:
 
@@ -172,8 +196,17 @@ rules:
     tag: "[Q][G]"
     applies: "'freq' in d.stages"
     requires: [freqs]
-    when: "d.freqs and min(d.freqs) < 100"
-    evidence: "最低振动模 {min_freq} cm^-1 < 100 cm^-1，谐振近似下 ZPE/熵误差可达 1 kcal/mol 量级。"
+    # `0 <` 这个下限是 v0.7 补的，来源是真实日志而不是推理：
+    # 水二聚体 / HF 二聚体在 B3LYP/6-31G(d) 下 opt freq，会留下两个虚频
+    # （实测 -250.6 / -44.2 cm⁻¹）。旧写法 min(d.freqs) < 100 把 -250 也当成
+    # 「低频模」，于是同一处缺陷被报两次：B-01 已经判了 critical「不是极小点」，
+    # B-03 又补一条 minor「需准谐振校正」。
+    # 两者的处置完全相反 —— 低频要做 qs 校正，虚频要重新优化 —— 所以这不只是
+    # 重复计分，是**给错了处方**。
+    # 用 any(0 < f < 100) 而不是 0 < min(...)：一个体系完全可能既有一个虚频、
+    # 又有一个 50 cm⁻¹ 的实低频模，那种情况两条都该报。
+    when: "d.freqs and any(0 < f < 100 for f in d.freqs)"
+    evidence: "存在实频 {min_real_freq} cm^-1 < 100 cm^-1，谐振近似下 ZPE/熵误差可达 1 kcal/mol 量级。"
     fix: "用 GoodVibes 做准谐振校正（--qs 或 --freq_cutoff 100），否则自由能比较会有系统偏差。"
     action: human_review
 
@@ -424,6 +457,12 @@ rules:
     severity: major
     title: 自由能高于零点能校正后的电子能
     tag: "[C]"
+    # applies 是 v0.7 补的。原来只有 requires，于是在没有频率的作业（单点、
+    # opt-only、崩溃日志）上全报 unknown —— 实测 28 份真实日志里 26 份如此。
+    # 这不是「缺数据判不了」，而是「这类任务没有 G/zpe 这两个量」，按项目自己
+    # 的规则该判 na（不计入覆盖率分母）。28 条 unknown 把「未能判定」清单塞满，
+    # 真正需要关注的 unknown 反而被埋了。
+    applies: "'freq' in d.stages"
     requires: [zpe_energy, gibbs_energy]
     when: "d.gibbs_energy - d.zpe_energy > 0.001"
     evidence: "E+ZPE = {zpe_energy} Ha，G = {gibbs_energy} Ha，G 反而高 {gibbs_minus_zpe_kcal} kcal/mol。"

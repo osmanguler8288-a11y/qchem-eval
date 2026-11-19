@@ -100,7 +100,8 @@ def _suggest(name: str, pool: Any, n: int = 1) -> str:
 # 否则引用它的规则会在加载期被误判为"未知名字"。tests/test_rules.py 里有断言
 # 拿真实解析结果反查这个集合，漏加会直接让测试红掉。
 DERIVED_CTX_KEYS = frozenset({
-    "err", "last_cycles", "min_freq", "stages_s", "n_freqs", "n_elems", "n_heavy",
+    "err", "last_cycles", "min_freq", "min_real_freq", "stages_s", "n_freqs",
+    "n_elems", "n_heavy",
     "gap_ev", "s2_dev", "n_electrons", "tm_zs", "heavy_zs", "n_err", "n_trace",
     "de_kcal", "e_prev", "e_last", "de_up_kcal", "gibbs_minus_zpe_kcal", "opt_table",
     "conv_tol", "conv_tol_num", "conv_tol_src", "conv_last", "conv_ratio",
@@ -300,6 +301,11 @@ def build_context(d: CalcData) -> _SafeDict:
     ctx["err"] = "；".join(d.error_terminations) if d.error_terminations else "（无）"
     ctx["last_cycles"] = d.scf_cycles[-1] if d.scf_cycles else "?"
     ctx["min_freq"] = round(min(d.freqs), 2) if d.freqs else "?"
+    # 只取实频。B-03 判定的是「至少有一个 0 < f < 100 的实频模」，而 min_freq
+    # 在有虚频时是负数——拿它当 evidence 会打出「存在实频 -250.6 cm^-1 < 100」
+    # 这种自相矛盾的话。真实样本（水二聚体 opt freq）就是这么踩出来的。
+    _real_freqs = [f for f in d.freqs if f > 0]
+    ctx["min_real_freq"] = round(min(_real_freqs), 2) if _real_freqs else "?"
     ctx["stages_s"] = "+".join(d.stages) if d.stages else "?"
     ctx["n_freqs"] = len(d.freqs)
     ctx["n_elems"] = len(d.atomic_numbers)

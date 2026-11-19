@@ -1,0 +1,6 @@
+cal_cu_h2o rc=0
+cal_n2_stretch rc=0
+cal_h2_stretch rc=0
+cal_hf_dimer rc=0
+cal_dimer_hb rc=0
+cal_dimer_loose rc=0

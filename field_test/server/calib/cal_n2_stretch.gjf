@@ -1,0 +1,10 @@
+%nprocshared=1
+%mem=1GB
+#p B3LYP/6-31G(d) opt freq
+
+N2 stretched to 1.3 A
+
+0 1
+N   0.0000   0.0000   0.0000
+N   0.0000   0.0000   1.3000
+

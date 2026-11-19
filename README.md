@@ -80,7 +80,7 @@ qchem_eval/
   schema.py              两个契约：CalcData（事实）/ EvalResult（唯一出口）
   parsers/gaussian.py    单遍流式解析，Gaussian 16
   parsers/__init__.py    格式嗅探与分发（ORCA 待接）
-  rules/catalog.yaml     39 条结构化规则 + 2 条跨阶段规则（v0.6）
+  rules/catalog.yaml     39 条结构化规则 + 2 条跨阶段规则（v0.7）
   rules/signatures.yaml  28 条官方错误指纹（verbatim）
   rules/evaluator.py     求值 + 加载期校验 + 最坏优先聚合
   rules/signatures.py    错误块 → 指纹匹配
@@ -93,6 +93,7 @@ tools/
   synth_failures.py      带标签失败样本生成（嫁接 + 变异）
   eval_rules.py          规则级 / 签名级 P/R 报告
   risk_coverage.py       risk-coverage 曲线 + AURC（零绘图依赖，手写 SVG）
+  calibrate.py           用真实日志校准阈值（分布 + 余量 + 未校准项）
 ```
 
 ## 实测

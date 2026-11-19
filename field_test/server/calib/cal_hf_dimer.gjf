@@ -1,0 +1,12 @@
+%nprocshared=1
+%mem=2GB
+#p B3LYP/6-31G(d) opt freq
+
+HF dimer, linear hydrogen bond
+
+0 1
+F   0.0000   0.0000   0.0000
+H   0.0000   0.0000   0.9200
+F   0.0000   0.0000   2.5000
+H   0.0000   0.0000   3.4200
+

@@ -191,6 +191,17 @@ def complex_() -> int:
     return run_inputs(HERE / "server" / "complex", "complex")
 
 
+def calib() -> int:
+    """阈值校准样本：opt freq 为主的真实难度阶梯。
+
+    这批不是为了「认出失败」，是为了「看阈值该定在哪」——现有 28 份里只有
+    2 份带频率，振动类规则根本没有分布可看。opt freq 比单点慢一个量级，
+    所以超时给到 3000 秒（单核 6-8 原子的 B3LYP/6-31G(d) opt freq 约 3-8 分钟，
+    6 份并行；拉开键长的那两份会走更多优化步）。
+    """
+    return run_inputs(HERE / "server" / "calib", "calib", timeout=3000.0)
+
+
 DEPLOY_DIR = "/nfs-cu07-1/mqh/qchem-eval-verify"
 
 
@@ -316,6 +327,8 @@ def main(argv: list[str]) -> int:
             return badgeom()
         if verb == "complex":
             return complex_()
+        if verb == "calib":
+            return calib()
         if verb == "deploy":
             return deploy()
         if verb == "special":

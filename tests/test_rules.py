@@ -733,3 +733,74 @@ def test_risk_coverage_beats_random():
     r50 = at_coverage(pts, 0.5)
     assert r50 is not None
     assert r50 < base / 2, f"50% 覆盖处漏放 {r50:.1%}，随机基线 {base:.1%}，排序效果不足"
+
+
+# ------------------------------------- 6. 阈值校准暴露的问题（v0.7，真实日志驱动）
+
+def _freq_status(freqs: list[float], n_imag: int | None = None) -> dict[str, str]:
+    """直接构造 CalcData 驱动规则，不经过日志解析。
+
+    测的是「给定这组频率，规则怎么判」，跟日志格式无关，所以不该被解析器的
+    行为牵着走。真实日志驱动的部分在 field_test 里，这里只钉判定的语义。
+    """
+    from qchem_eval.rules.evaluator import load_ruleset, run_rules
+    from qchem_eval.schema import CalcData
+
+    d = CalcData(source="freq.log", software="gaussian")
+    d.stages = ["freq"]
+    d.freqs = list(freqs)
+    d.n_imag = sum(1 for f in freqs if f < 0) if n_imag is None else n_imag
+    d.normal_termination = True
+    return {o.rule.id: o.status for o in run_rules(d, load_ruleset())}
+
+
+def test_imaginary_freq_is_not_reported_as_lowfreq():
+    """虚频不能被 B-03 当成「低频模」——这是真实日志暴露的第一个判定错误。
+
+    来源：水二聚体 B3LYP/6-31G(d) opt freq，实测频率
+    [-250.6, -44.2, 152.3, ...]（cu04，2026-11-19）。
+
+    旧写法 `min(d.freqs) < 100` 让 -250.6 满足条件，于是：
+      · B-01 已经判了 critical「有两个虚频，不是极小点」
+      · B-03 又补一条 minor「低频模需准谐振校正」
+    两者的处方完全相反——低频要做 qs 校正，虚频要重新优化——所以这不只是
+    重复计分，是给错了处置建议。
+    """
+    st = _freq_status([-250.6, -44.2, 152.3, 162.2, 246.7])
+    assert st["B-01"] == "hit"          # 两个虚频：critical
+    assert st["B-03"] == "miss"         # 但没有任何实频模 < 100
+
+
+def test_real_low_freq_still_flagged():
+    """纯实频的低频模仍要报 —— 修虚频误报不能把这条规则的本来用途一起修掉。"""
+    st = _freq_status([60.0, 150.0, 320.0])
+    assert st["B-03"] == "hit"
+    assert st["B-01"] == "miss"
+
+
+def test_lowfreq_and_small_imaginary_coexist():
+    """一个体系可以同时有「小的虚频」和「实的低频模」，三条规则各管各的。
+
+    这是 `any(0 < f < 100)` 而不是 `0 < min(freqs) < 100` 的理由：用 min 的话
+    -10 会盖住 50，B-03 就漏了。
+    """
+    st = _freq_status([-10.0, 50.0, 300.0])
+    assert st["B-02"] == "hit"          # 一个虚频：major
+    assert st["B-03"] == "hit"          # 实频 50 < 100
+    assert st["B-04"] == "hit"          # 虚频 -10 > -50，疑似数值噪声
+
+
+def test_d09_not_applicable_without_freq():
+    """没有频率的作业里 G / ZPE 根本不存在，是 na 而不是 unknown。
+
+    实测 28 份真实日志里有 26 份被判 unknown，把「未能判定」清单塞满，
+    真正需要人看的 unknown 反而被埋。na 不计入覆盖率分母，这才是对的语义。
+    """
+    from qchem_eval.rules.evaluator import load_ruleset, run_rules
+    from qchem_eval.schema import CalcData
+
+    d = CalcData(source="sp.log", software="gaussian")
+    d.stages = ["sp"]
+    d.normal_termination = True
+    st = {o.rule.id: o.status for o in run_rules(d, load_ruleset())}
+    assert st["D-09"] == "na"
