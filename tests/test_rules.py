@@ -804,3 +804,45 @@ def test_d09_not_applicable_without_freq():
     d.normal_termination = True
     st = {o.rule.id: o.status for o in run_rules(d, load_ruleset())}
     assert st["D-09"] == "na"
+
+
+def test_single_atom_has_no_atom_distance_check():
+    """单原子体系没有「原子间距」和「片段划分」，B-05 / B-10 该判 na 不是 unknown。
+
+    来源：field_test/real/fail_coord_missing.log（单原子氧，2026-11-19）。
+    两个派生量在 len(coords_last) < 2 时返回 None，而它们在 requires 里，
+    于是走的是 unknown —— 报告上显示「缺数据判不了」，但这份日志什么都不缺，
+    是这类任务根本没有这个量。和 D-09 同一个病，这是第三、四次犯。
+    """
+    from qchem_eval.rules.evaluator import load_ruleset, run_rules
+    from qchem_eval.schema import CalcData
+
+    d = CalcData(source="O_atom.log", software="gaussian")
+    d.stages = ["sp"]
+    d.normal_termination = True
+    d.atomic_numbers = [8]
+    d.natoms = 1
+    d.coords_last = [(0.0, 0.0, 0.0)]
+    st = {o.rule.id: o.status for o in run_rules(d, load_ruleset())}
+    assert st["B-05"] == "na"
+    assert st["B-10"] == "na"
+
+
+def test_empty_geometry_still_unknown_not_na():
+    """坐标为空 ≠ 单原子。崩溃的日志没打印几何，此时「有几个原子」是**不知道**，
+    必须留在 unknown（缺数据）而不是 na（不适用）—— 否则一份崩在 l1 的日志
+    会因为「没有几何」而看起来像是「这类检查不适用」，缺口被藏起来。
+
+    这正是 applies 写 `len(d.coords_last) != 1` 而不是 `>= 2` 的理由。
+    """
+    from qchem_eval.rules.evaluator import load_ruleset, run_rules
+    from qchem_eval.schema import CalcData
+
+    d = CalcData(source="crash.log", software="gaussian")
+    d.stages = ["sp"]
+    d.normal_termination = False
+    d.atomic_numbers = []
+    d.coords_last = []
+    st = {o.rule.id: o.status for o in run_rules(d, load_ruleset())}
+    assert st["B-05"] == "unknown"
+    assert st["B-10"] == "unknown"

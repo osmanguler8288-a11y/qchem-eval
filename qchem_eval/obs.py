@@ -171,8 +171,31 @@ def _verify_writable(p: Path) -> None:
         raise OSError(f"日志路径不是普通文件：{p}")
 
 
+_null_attached = False
+
+
+def _ensure_null_handler() -> None:
+    """包级 logger 挂一个 NullHandler（PEP 282 的库约定），只挂一次。
+
+    不挂的后果很具体：宿主没配置 logging 时，warning 级日志会漏给 Python 的
+    lastResort handler，而它只打 record.getMessage() —— 于是 stderr 上出现一行
+    光秃秃的 `engine.result`，**fields 全丢**，看不出是哪个文件、什么结论。
+    实测症状：field_test/server/verify_rules.py 跑 28 份日志，stderr 冒出 12 行
+    这样的裸事件名，而且只有判 FAIL 的那几份（WARNING 级）才有。
+
+    这也是库的基本礼貌：import 一个库不该往宿主的 stderr 里写字。
+    setup_logging() 会先摘掉全部 handler 再挂自己的，所以 CLI 行为不变。
+    """
+    global _null_attached
+    if _null_attached:
+        return
+    logging.getLogger(LOGGER_NAME).addHandler(logging.NullHandler())
+    _null_attached = True
+
+
 def get_logger(name: str | None = None) -> logging.Logger:
     """取子 logger。名字挂到 qchem_eval.* 下，方便按模块开 DEBUG。"""
+    _ensure_null_handler()
     return logging.getLogger(LOGGER_NAME if not name else f"{LOGGER_NAME}.{name}")
 
 

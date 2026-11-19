@@ -12,6 +12,7 @@ dist/
 # 运行产物：批量跑起来会越积越多，不该进版本库
 metrics.json
 run.log
+ea.json
 
 # 服务器传输中间产物。日志本体已经落在 field_test/*_out/，
 # tgz 只是 sftp 的载体，每次复跑都会重建，提交它等于反复存同一份二进制。

@@ -409,3 +409,33 @@ def test_cli_batch_continues_after_bad_file(capsys, tmp_path):
     s = json.loads((tmp_path / "m.json").read_text(encoding="utf-8"))
     assert s["n_files"] == 2 and s["n_ok"] == 2 and s["n_error"] == 0
     assert s["verdicts"]["unknown"] == 1    # 坏文件在这里现身，没被静默丢掉
+
+
+def test_library_adds_null_handler(capsys):
+    """宿主不配置 logging 时，库不能往 stderr 漏裸事件名。
+
+    漏的方式很隐蔽：warning 级日志交给 Python 的 lastResort handler，它只打
+    record.getMessage()，于是 stderr 上出现一行 `engine.result`，**fields 全丢**。
+    实测症状是 field_test/server/verify_rules.py 跑 28 份日志时冒出 12 行这样的
+    裸事件名 —— 只看得出「有东西判了 FAIL」，看不出是哪份文件、什么结论。
+    """
+    import logging
+
+    from qchem_eval import obs
+
+    pkg = logging.getLogger(obs.LOGGER_NAME)
+    saved_handlers, saved_prop = pkg.handlers[:], pkg.propagate
+    saved_flag = obs._null_attached
+    try:
+        pkg.handlers.clear()
+        pkg.propagate = True
+        obs._null_attached = False
+        obs._ensure_null_handler()
+        # WARNING 级 —— 未挂 NullHandler 时这一行一定会漏到 stderr
+        obs.log_event(obs.get_logger("engine"), "engine.result", verdict="fail")
+    finally:
+        pkg.handlers[:] = saved_handlers
+        pkg.propagate = saved_prop
+        obs._null_attached = saved_flag
+
+    assert capsys.readouterr().err == ""

@@ -1,5 +1,5 @@
 # =============================================================================
-# qchem-eval 规则清单 v0.2
+# qchem-eval 规则清单 v0.8
 #
 # 每条规则四个必填要素（缺一不可，这是「可裁定」的定义）：
 #   requires  —— 判定所依赖的字段；任一缺失 => UNKNOWN（**不是 PASS**）
@@ -20,7 +20,7 @@
 # =============================================================================
 
 meta:
-  version: "0.7"
+  version: "0.8"
   n_rules: 39
   notes: |
     coverage: A≈90% B≈90% C≈25% D≈75% E≈95%
@@ -82,6 +82,27 @@ meta:
         B-04（小虚频 -50 线）：真实虚频都是 -250 量级，缺 -10~-40 的样本；
         C-05（HOMO-LUMO gap 0.5 eV）：真实最小 gap 2.18 eV，缺长共轭/双自由基
         体系。这两条等下一批样本。
+
+    v0.8 是第一次**误差分析**（tools/error_analysis.py，2026-11-19）。把 160 份
+    样本的判错按「解析器缺口 / 规则声明错 / 规则判错 / 规则未覆盖 / 需多字段综合」
+    归因，同时扫全语料 54 份真实日志的 unknown 分布。结论：
+      · 带标签样本上只剩 1 条分歧（fail_coord_missing，单文件层面原理上判不了），
+        说明**标注集已经饱和** —— 题是我出的、答案也是我定的，考不出东西了。
+      · 全语料 unparsed_hits = 0，即没有一处「日志里有、解析器没取到」。
+        所以 unknown 只有两个来源：崩溃日志真的没算出东西（合理）、
+        这类任务没有这个量（该判 na）。
+      · **B-05 / B-10 缺 applies**（第三、四次同类错误）。min_atom_distance 与
+        n_fragments 在 len(coords_last) < 2 时返回 None，于是单原子体系被判成
+        「缺数据判不了」。实测 fail_coord_missing（单原子氧）就是如此。
+        单原子参考态 / 单原子催化剂在催化里是最常见的算例之一。
+        守卫写 `len(d.coords_last) != 1` 而不是 `>= 2`：坐标为空时表示崩溃日志
+        没打印几何、「不知道有几个原子」，那仍应判 unknown。
+      · 记录一条**未修**的结构性问题（需要设计决策，不属于机械修复）：
+        11 条 minor 级规则配了 action: human_review，语义上自相矛盾；加上
+        ACTION_PRIORITY 里 rerun(3) > escalate(2) > human_review(1) 的顺序倒置，
+        结果是 54 份日志里 26 份（48%）被判成「必须人工复核」，其中 20 份的
+        最坏级别是 minor。动作字段一旦对一半文件都喊人，Pipeline 就没法用它
+        做路由 —— 和「日志满屏会被用户永久关掉」是同一个病。
 
 rules:
 
@@ -227,6 +248,15 @@ rules:
     severity: critical
     title: 末帧几何存在原子重叠
     tag: "[M]"
+    # applies 是 v0.8 补的，和 D-09、B-10 是同一个病：派生量在某类任务上**不存在**，
+    # 却被 requires 走了 unknown 那条路。min_atom_distance 在 len(coords_last) < 2
+    # 时返回 None，于是单原子体系判成「缺数据判不了」—— 而这类算例（孤立原子参考态、
+    # 单原子催化剂模型）在催化里是最常见的一类。
+    # 守卫写成 `!= 1` 而不是 `>= 2` 是刻意的，三种情况语义不同：
+    #   coords_last 空（崩溃日志没打印几何）→ 不知道有几个原子，仍应判 unknown
+    #   coords_last 恰好 1 个原子          → na，这类任务没有「原子间距」
+    #   coords_last >= 2                  → 正常判定
+    applies: "len(d.coords_last) != 1"
     requires: [min_atom_distance]
     when: "min_dist < 0.6"
     evidence: "最后一帧几何的最小原子间距 {min_dist} Å，短于最短的常规化学键（H–H 约 0.74 Å）。"
@@ -289,6 +319,9 @@ rules:
     # requires 只放 n_fragments。fragment_gap 在只有一个片段时无定义，
     # 放进 requires 会让所有正常分子都判成 UNKNOWN。when 里靠 `and` 短路，
     # 保证 frag_gap 只在 n_frag >= 2 时才被求值（那时它一定已注入）。
+    # applies 是 v0.8 补的：单原子体系 n_fragments 返回 None（不足两个原子，
+    # 谈不上"片段划分"），会被判成 unknown。理由同 B-05。
+    applies: "len(d.coords_last) != 1"
     requires: [n_fragments]
     when: "n_frag >= 2 and frag_gap > 4.5"
     evidence: "末帧几何按共价半径切分后得到 {n_frag} 个互不相连的片段，最近的片段间距离 {frag_gap} Å，已远超任何分子间作用力的范围（氢键 1.5–2.2 Å、π 堆积 3.3–3.8 Å、范德华接触上限约 4.0 Å）。"
