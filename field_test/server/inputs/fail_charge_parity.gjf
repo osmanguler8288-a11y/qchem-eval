@@ -1,0 +1,10 @@
+%nprocshared=1
+%mem=512MB
+#p UB3LYP/6-31G(d)
+
+multiplicity parity conflict
+
+0 2
+O   0.0000   0.0000   0.6000
+O   0.0000   0.0000  -0.6000
+

@@ -1,0 +1,6 @@
+bad_dup_h rc=1
+bad_bondlen rc=0
+bad_collinear rc=0
+bad_element rc=0
+bad_charge rc=0
+bad_overlap rc=1

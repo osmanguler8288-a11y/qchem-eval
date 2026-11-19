@@ -1,0 +1,448 @@
+# =============================================================================
+# 失败指纹库 v1.0
+#
+# 数据来源（唯一来源，不掺入记忆）：
+#   Supreeth Prasad, "Master List of Gaussian Error Messages" (2018)
+#   https://np3wu.github.io/Spydur_Guide/docs/blackbook/gausserr/1list.html
+#   抓取于 2026-11-17，共 27 条。
+#
+# 每条两个字段必须分清，这是本文件可信度的基础：
+#   cause_text  —— 原文逐字照录（含原文里 g98 的 /disc30/ 路径），**一个字都不改**
+#   match       —— 从 cause_text 里摘出的稳定匹配片段。为什么不能整行匹配：
+#                  原文路径是 /disc30/g98/l101.exe，实际环境是 /g16/ 或
+#                  /software/Gaussian16/g16/l101.exe，整行硬匹配必然失效。
+#                  所以 link 号单独抽成 link 字段，用 l(\d+)\.exe 抓。
+#
+# 判定字段（severity / action）是我的映射，不是官方给的：
+#   官方只回答「怎么修」，不回答「这次结果算不算废」。
+# =============================================================================
+
+meta:
+  version: "1.0"
+  source: "Supreeth Prasad, Master List of Gaussian Error Messages"
+  url: "https://np3wu.github.io/Spydur_Guide/docs/blackbook/gausserr/1list.html"
+  retrieved: "2026-11-17"
+  n_official: 27
+  honesty_note: |
+    这 27 条里约 20 条是「计算崩了」（输入错误、link 错误），只有 5 条属于
+    「算完了但结果有问题」。官方错误目录覆盖的是崩溃，不覆盖静默错误——
+    后者要靠 catalog.yaml 里的数值规则和跨阶段检查。
+
+signatures:
+
+  # ---------------- 无错误行的终止（官方条目 #1）----------------
+  # 官方原文说的是「如果任务不以那三行结尾且没有其他报错，通常是磁盘配额或内存」
+  - id: SIG-NOTERM
+    name: 日志无任何终止标志
+    category: L-进程被杀
+    link: null
+    derived: true          # 不是一条 verbatim 文本，而是官方条目 #1 的反向判定
+    match: []              # 由 normal_termination is False 且无 error_blocks 触发
+    severity: critical
+    action: rerun
+    official_fix: "用 quota 检查配额并删除无用文件；检查/调整申请的内存。"
+    ref: "Master List #1 Normal termination"
+
+  # ---------------- 磁盘 / 内存（官方 #2, #22, #26, #27）----------------
+  - id: SIG-DISK-1
+    name: 磁盘写失败（配额满）
+    category: L-资源不足
+    link: null
+    match: ["Erroneous write. write", "writwa"]
+    severity: critical
+    action: rerun
+    cause_text: |
+      Erroneous write. write 122880 instead of 4239360.
+      fd = 3
+      writwa
+      writwa: File exists
+    official_fix: "用 quota 检查配额并删除无用文件；若任务对当前硬件过大，改用更小的基组。"
+    ref: "Master List #2 Erroneous Write"
+
+  - id: SIG-DISK-2
+    name: 磁盘空间耗尽
+    category: L-资源不足
+    link: null
+    match: ["No space left on device", "Probably out of disk space", "Write error in NtrExt1"]
+    severity: critical
+    action: rerun
+    cause_text: |
+      Erroneous write. write -1 instead of 3648000.
+      fd = 4
+      writwa
+      writwa: No space left on device
+      ---
+      Erroneous write during file extend. write -1 instead of 8192
+      Probably out of disk space.
+      Write error in NtrExt1
+    official_fix: "用 quota 检查配额并删除无用文件；若任务对当前硬件过大，改用更小的基组。"
+    ref: "Master List #2 Erroneous Write（变体 2/3）"
+
+  - id: SIG-MEM-1
+    name: malloc 失败（内存耗尽）
+    category: L-资源不足
+    link: null
+    match: ["malloc failed"]
+    severity: critical
+    action: rerun
+    cause_text: |
+      malloc failed.: Resource temporarily unavailable
+      malloc failed.
+    official_fix: "减小 %mem 值；或在作业脚本中增大 --mem= 申请量。"
+    ref: "Master List #22 malloc failed"
+
+  - id: SIG-MEM-2
+    name: galloc 内存分配失败
+    category: L-资源不足
+    link: null
+    match: ["galloc: could not allocate memory"]
+    severity: critical
+    action: rerun
+    cause_text: |
+      galloc: could not allocate memory
+    official_fix: "Gaussian 实际占用约比 %mem 多 1 GB；让 %mem 至少比 --mem 少 1 GB。"
+    ref: "Master List #26 galloc"
+
+  - id: SIG-IO-1
+    name: scratch 目录不存在导致段错误
+    category: L-资源不足
+    link: null
+    match: ["PGFIO/stdio: No such file or directory", "segmentation violation, address not mapped"]
+    severity: critical
+    action: rerun
+    cause_text: |
+      PGFIO/stdio: No such file or directory
+      PGFIO-F-/OPEN/unit=11/error code returned by host stdio - 2.
+       File name = /home/johndoe/scratch/Gau-12345.inp
+       In source file ml0.f, at line number 181
+      0 0x42bb41
+      Error: segmentation violation, address not mapped to object
+    official_fix: "mkdir 创建该目录，或把 GAUSS_SCRDIR 改为已存在的目录。"
+    ref: "Master List #27 No such file or directory"
+
+  # ---------------- 输入错误 l101（官方 #7, #14, #17, #19, #20, #23, #24）----------------
+  - id: SIG-IN-1
+    name: 缺少电荷/多重度行
+    category: L-输入错误
+    link: 101
+    match: ["End of file in GetChg."]
+    severity: critical
+    action: human_review
+    cause_text: |
+      Symbolic Z-matrix:
+      End of file in GetChg.
+      Error termination via Lnk1e in /disc30/g98/l101.exe.
+    official_fix: "补上电荷/多重度行，或在 route 段加入 geom=allcheck。"
+    ref: "Master List #7 End of file in GetChg"
+
+  - id: SIG-IN-2
+    name: Z-matrix 变量名不存在
+    category: L-输入错误
+    link: 101
+    match: ["not found in Z-matrix"]
+    severity: critical
+    action: human_review
+    cause_text: |
+      Symbol "H3NNN" not found in Z-matrix.
+      Error termination via Lnk1e in /disc30/g98/l101.exe.
+    official_fix: "改正符号名，或把该变量加入 z-matrix。"
+    ref: "Master List #14 Symbol XXX not found in Z-matrix"
+
+  - id: SIG-IN-3
+    name: 几何部分末尾缺空行 / 忘记 geom=check
+    category: L-输入错误
+    link: 101
+    match: ["End of file in ZSymb."]
+    severity: critical
+    action: human_review
+    cause_text: |
+      Symbolic Z-matrix:
+      Charge = 0 Multiplicity = 1
+      End of file in ZSymb.
+      Error termination via Lnk1e in /disc30/g98/l101.exe.
+    official_fix: "末尾补空行，或加上 geom=check。"
+    ref: "Master List #17 End of file in ZSymb"
+
+  - id: SIG-IN-4
+    name: Z-matrix 变量索引越界
+    category: L-输入错误
+    link: 101
+    match: ["is out of range, NVar="]
+    severity: critical
+    action: human_review
+    cause_text: |
+      Variable index of 3000 on card  15 is out of range, NVar=  42.
+      Termination in UpdVr1.
+      Error termination via Lnk1e in /disc30/g98/l101.exe.
+    official_fix: "z-matrix 中某变量忘记写入变量列表，补上该变量。"
+    ref: "Master List #19 Variable index out of range"
+
+  - id: SIG-IN-5
+    name: Z-matrix 引用了不存在的原子
+    category: L-输入错误
+    link: 101
+    match: ["Unknown center"]
+    severity: critical
+    action: human_review
+    cause_text: |
+      Unknown center X
+      Error termination via Lnk1e in /disc30/g98/l101.exe.
+    official_fix: "修正原子名。"
+    ref: "Master List #20 Unknown center XXX"
+
+  - id: SIG-IN-6
+    name: 电荷/多重度行非整数（geom=modify 漏标题行）
+    category: L-输入错误
+    link: 101
+    match: ["Charge and multiplicity card seems defective", "WANTED AN INTEGER AS INPUT"]
+    severity: critical
+    action: human_review
+    cause_text: |
+      Charge and multiplicity card seems defective:
+      Charge is bogus.
+       WANTED AN INTEGER AS INPUT.
+       FOUND A STRING AS INPUT.
+    official_fix: "geom=modify 时必须保留标题行；补上标题行。"
+    ref: "Master List #23 Charge and multiplicity card seems defective"
+
+  - id: SIG-IN-7
+    name: geom=modify 改了 chk 里不存在的变量
+    category: L-输入错误
+    link: 101
+    match: ["Attempt to redefine unrecognized symbol"]
+    severity: critical
+    action: human_review
+    cause_text: |
+      O2WXC 90.
+      Attempt to redefine unrecognized symbol "O2WXC".
+      Error termination via Lnk1e in /disc30/g98/l101.exe.
+    official_fix: "指定正确的 chk 文件或正确的变量名。"
+    ref: "Master List #24 Attempt to redefine unrecognized symbol"
+
+  # ---------------- 几何/坐标（官方 #4, #8, #11, #16, #15）----------------
+  - id: SIG-GEO-1
+    name: Z-matrix 角度越出 0–180°
+    category: L-几何
+    link: 716
+    match: ["angle Alpha is outside the valid range"]
+    severity: critical
+    action: human_review
+    cause_text: |
+      Error on Z-matrix card number 9
+      angle Alpha is outside the valid range of 0 to 180.
+      Conversion from Z-matrix to cartesian coordinates failed:
+      Error termination via Lnk1e in /disc30/g98/l716.exe.
+    official_fix: "重新定义 z-matrix，或改用其他坐标体系。"
+    ref: "Master List #4 angle Alpha is outside the valid range"
+
+  - id: SIG-GEO-2
+    name: 点群或标准取向在优化中改变
+    category: L-几何
+    link: 202
+    match: ["Change in point group or standard orientation"]
+    severity: major
+    action: human_review
+    cause_text: |
+      Full point group                 C2      NOp   2
+      Omega: Change in point group or standard orientation.
+      Error termination via Lnk1e in /disc30/g98/l202.exe.
+    official_fix: "降对称性（nosymm）或重写 z-matrix；确认点群是否真的降了子群。"
+    ref: "Master List #8 Change in point group or standard orientation"
+
+  - id: SIG-GEO-3
+    name: 原子间距离矩阵异常（原子过近/距离 NaN）
+    category: L-几何
+    link: 202
+    match: ["Problem with the distance matrix"]
+    severity: critical
+    action: human_review
+    cause_text: |
+      Problem with the distance matrix.
+      Error termination via Lnk1e in /disc30/g98/l202.exe.
+    official_fix: "检查相关原子定义；常见原因是二面角丢负号导致两原子重合（距离为 0）。"
+    ref: "Master List #16 Problem with the distance matrix"
+
+  - id: SIG-GEO-4
+    name: FOpt 变量数与自由度不匹配
+    category: L-几何
+    link: 202
+    match: ["FOPT requested but NVar="]
+    severity: major
+    action: human_review
+    cause_text: |
+      FOPT requested but NVar=  29 while NDOF=  15.
+      Error termination via Lnk1e in /disc30/g98/l202.exe.
+    official_fix: "NDOF<NVar 说明实际对称性更高；NVar<NDOF 说明约束过多。改用 Opt 跳过校验（不推荐）。"
+    ref: "Master List #11 FOPT requested but NVar"
+
+  - id: SIG-GEO-5
+    name: 刚性扫描步数设为非法值
+    category: L-输入错误
+    link: 108
+    match: ["has invalid number of steps"]
+    severity: critical
+    action: human_review
+    cause_text: |
+      Variable  1 has invalid number of steps -1.
+      Error termination via Lnk1e in /disc30/g98/l108.exe.
+    official_fix: "扫描输入 z-matrix 与变量之间多了一个空行，删掉。"
+    ref: "Master List #15 Variable X has invalid number of steps"
+
+  # ---------------- 基组（官方 #5, #9, #12, #13, #25）----------------
+  - id: SIG-BAS-1
+    name: route 写了 gen 但没给基组内容
+    category: L-基组
+    link: 301
+    match: ["End of file reading basis center"]
+    severity: critical
+    action: human_review
+    cause_text: |
+      End of file reading basis center.
+      Error termination via Lnk1e in /disc30/g98/l301.exe.
+    official_fix: "补上基组内容，或从 route 行删掉 gen 并指定内置基组。"
+    ref: "Master List #5 Reading basis center"
+
+  - id: SIG-BAS-2
+    name: 自定义基组里原子符号非法
+    category: L-基组
+    link: 301
+    match: ["Unrecognized atomic symbol"]
+    severity: critical
+    action: human_review
+    cause_text: |
+      General basis read from cards: (6D, 7F)
+      Unrecognized atomic symbol ic2
+      Error termination via Lnk1e in /disc30/g98/l301.exe.
+    official_fix: "改为正确的原子符号。"
+    ref: "Master List #9 Unrecognized atomic symbol"
+
+  - id: SIG-BAS-3
+    name: CEP-121G* 占位极化函数导致轨道投影失败
+    category: L-基组
+    link: 401
+    match: ["Unable to project read-in occupied orbitals", "Unable to project full set of read-in orbitals"]
+    severity: major
+    action: rerun
+    cause_text: |
+      Initial guess read from the checkpoint file:
+      BiAq7_3+_C2.chk
+      Unable to project full set of read-in orbitals.
+      Projecting just the  36 occupied ones.
+      Unable to project read-in occupied orbitals.
+      Error termination via Lnk1e in /disc30/g98/l401.exe.
+    official_fix: "不要用 CEP-121G*，改用 CEP-121G（对许多元素二者相同）。"
+    ref: "Master List #12 Unable to project read-in occupied orbitals"
+
+  - id: SIG-BAS-4
+    name: MP2 积分排序失败（常与 CEP-121G* 同源）
+    category: L-基组
+    link: 906
+    match: ["KLT.ge.NIJTC in GetRSB"]
+    severity: critical
+    action: human_review
+    cause_text: |
+      (rs|ai) integrals will be sorted in core.
+      KLT.ge.NIJTC in GetRSB.
+      Error termination via Lnk1e in /disc30/g98/l906.exe.
+    official_fix: "不要用 CEP-121G*，改用 CEP-121G。"
+    ref: "Master List #13 KLT.ge.NIJTC in GetRSB"
+
+  - id: SIG-BAS-5
+    name: 点群变化叠加 iop 调参导致 MakNEB 不一致
+    category: L-基组
+    link: 301
+    match: ["Inconsistency #2 in MakNEB"]
+    severity: critical
+    action: human_review
+    cause_text: |
+      Standard basis: 3-21G (6D, 7F)
+      Inconsistency #2 in MakNEB.
+      Error termination via Lnk1e in /disc30/g98/l301.exe.
+    official_fix: "慎用 iop，最好整体删除这些 iop 覆写。"
+    ref: "Master List #25 Inconsistency #2 in MakNEB"
+
+  # ---------------- SCF（官方 #10）----------------
+  - id: SIG-SCF-1
+    name: SCF 未收敛（电荷密度未达判据）
+    category: L-SCF
+    link: 502
+    match: ["Convergence failure -- run terminated", "Convergence criterion not met"]
+    severity: critical
+    action: rerun
+    cause_text: |
+      >>>>>>>>>> Convergence criterion not met.
+       SCF Done:  E(RHF) =  -2131.95693715     A.U. after  257 cycles
+                   Convg  =    0.8831D-03             -V/T =  2.0048
+                   S**2   =   0.0000
+      Convergence failure -- run terminated.
+      Error termination via Lnk1e in /disc30/g98/l502.exe.
+    official_fix: "低级别先算再 guess=read；或用 SCF=QC / SCF=XQC；修正初始几何。"
+    ref: "Master List #10 Convergence failure -- run terminated"
+
+  # ---------------- 优化 / 内坐标（官方 #3, #18, #21）----------------
+  - id: SIG-OPT-1
+    name: 几何优化步数超限（l9999）
+    category: L-优化
+    link: 9999
+    match: ["Number of steps exceeded", "Optimization stopped"]
+    severity: critical
+    action: rerun
+    cause_text: |
+      Maximum Force            0.020301     0.000450     NO
+      RMS     Force            0.007068     0.000300     NO
+      Maximum Displacement     0.078972     0.001800     NO
+      RMS     Displacement     0.023716     0.001200     NO
+      Predicted change in Energy=-3.132299D-05
+      Optimization stopped.
+      -- Number of steps exceeded, NStep= 34
+      -- Flag reset to prevent archiving.
+      Error termination request processed by link 9999.
+      Error termination via Lnk1e in /disc30/g98/l9999.exe.
+    official_fix: "geom=allcheck 从最后一步续算；opt=CalcFC/ReadFC 改善 Hessian；或换 opt=ef / opt=gdiis。"
+    ref: "Master List #3 Link 9999"
+
+  - id: SIG-OPT-2
+    name: 冗余内坐标转 z-matrix 失败（几何其实已收敛）
+    category: L-优化
+    link: 9999
+    match: ["Determination of dummy atom variables in z-matrix conversion failed"]
+    severity: major
+    action: accept
+    cause_text: |
+      Determination of dummy atom variables in z-matrix conversion failed.
+      Determination of dummy atom variables in z-matrix conversion failed.
+      NNew=  6.03366976D+01 NOld=  5.07835896D+01 Diff=  9.55D+00
+      Error termination request processed by link 9999.
+      Error termination via Lnk1e in /disc30/g98/l9999.exe.
+    official_fix: "几何优化本身已收敛，只是无法转回输入的 z-matrix；改用笛卡尔坐标输出/处理。"
+    ref: "Master List #21 Determination of dummy atom variables"
+
+  - id: SIG-OPT-3
+    name: 线性搜索失败（Hessian 失效）
+    category: L-优化
+    link: 103
+    match: ["Linear search skipped for unknown reason", "RFO could not converge Lambda"]
+    severity: major
+    action: rerun
+    cause_text: |
+      RFO could not converge Lambda in 999 iterations.
+      Linear search skipped for unknown reason.
+      Error termination via Lnk1e in /disc30/g98/l103.exe.
+    official_fix: "用 Opt=CalcFC 重启优化。"
+    ref: "Master List #18 Linear search skipped for unknown reason"
+
+  # ---------------- 文件 / chk（官方 #6）----------------
+  - id: SIG-FIL-1
+    name: 从 chk/RWF 读取了不存在的数据
+    category: L-文件
+    link: null
+    match: ["Operation on file out of range", "NtrErr Called from FileIO"]
+    severity: critical
+    action: rerun
+    cause_text: |
+      Error termination in NtrErr:
+      NtrErr Called from FileIO.
+      Operation on file out of range.
+      FileIO: IOper= 2 IFilNo(1)=-19999 Len= 1829888 IPos= -900525056 Q= 4352094416
+    official_fix: "Opt=ReadFC / guess=read / geom=allcheck 依赖的 chk 信息不存在；重新计算或手工输入。"
+    ref: "Master List #6 Operation on file out of range"

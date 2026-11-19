@@ -1,0 +1,10 @@
+%nprocshared=1
+%mem=1GB
+#p UB3LYP/6-31G(d)
+
+triplet oxygen, open shell
+
+0 3
+O   0.0000   0.0000   0.6000
+O   0.0000   0.0000  -0.6000
+

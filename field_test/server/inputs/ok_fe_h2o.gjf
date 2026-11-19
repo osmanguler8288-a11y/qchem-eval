@@ -1,0 +1,12 @@
+%nprocshared=1
+%mem=1GB
+#p UB3LYP/LANL2DZ
+
+iron water complex with ECP basis
+
+0 5
+Fe  0.0000   0.0000   0.0000
+O   0.0000   0.0000   2.0000
+H   0.7572   0.0000   2.4692
+H  -0.7572   0.0000   2.4692
+

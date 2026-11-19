@@ -1,0 +1,1106 @@
+[
+  {
+    "file": "A-01_abnormal_term.log",
+    "kind": "rule",
+    "expect": "A-01",
+    "forbid": [],
+    "note": "把正常终止改成异常终止"
+  },
+  {
+    "file": "A-02_scf_fail.log",
+    "kind": "rule",
+    "expect": "A-02",
+    "forbid": [],
+    "note": "SCF Done 之前插一条 Convergence failure（官方 #10 的真实结构）"
+  },
+  {
+    "file": "A-03_near_maxcycle.log",
+    "kind": "rule",
+    "expect": "A-03",
+    "forbid": [],
+    "note": "120/128 步 = 93%，逼近上限"
+  },
+  {
+    "file": "A-04_slow_scf.log",
+    "kind": "rule",
+    "expect": "A-04",
+    "forbid": [],
+    "note": "60 步收敛，慢但没到 80% 上限"
+  },
+  {
+    "file": "A-05_opt_not_conv.log",
+    "kind": "rule",
+    "expect": "A-05",
+    "forbid": [],
+    "note": "优化停住但四判据未全 YES"
+  },
+  {
+    "file": "A-06_conv_too_loose.log",
+    "kind": "rule",
+    "expect": "A-06",
+    "forbid": [],
+    "note": "Conv 0.19D-05 是判据 1e-8 的 1900 倍——G16 在跑满 maxcycle 后仍会打印 SCF Done，这是最隐蔽的一类废结果"
+  },
+  {
+    "file": "A-07_scf_rises.log",
+    "kind": "rule",
+    "expect": "A-07",
+    "forbid": [],
+    "note": "SCF 迭代能量上升"
+  },
+  {
+    "file": "B-01_two_imag.log",
+    "kind": "rule",
+    "expect": "B-01",
+    "forbid": [],
+    "note": "两个虚频 = 停在鞍点"
+  },
+  {
+    "file": "B-02_one_imag.log",
+    "kind": "rule",
+    "expect": "B-02",
+    "forbid": [],
+    "note": "单个虚频"
+  },
+  {
+    "file": "B-03_low_freq.log",
+    "kind": "rule",
+    "expect": "B-03",
+    "forbid": [],
+    "note": "最低模 23 cm^-1，需准谐振校正"
+  },
+  {
+    "file": "B-04_tiny_imag.log",
+    "kind": "rule",
+    "expect": "B-04",
+    "forbid": [],
+    "note": "虚频只有 -30 cm^-1，多半是网格噪声"
+  },
+  {
+    "file": "B-05_atom_overlap.log",
+    "kind": "rule",
+    "expect": "B-05",
+    "forbid": [],
+    "note": "把 2 号原子挪到 1 号原子上（距离 0）"
+  },
+  {
+    "file": "B-06_dummy_atom.log",
+    "kind": "rule",
+    "expect": "B-06",
+    "forbid": [],
+    "note": "末位原子改成虚原子（Z=0）"
+  },
+  {
+    "file": "B-07_nan_freq.log",
+    "kind": "rule",
+    "expect": "B-07",
+    "forbid": [],
+    "note": "频率里出现 NaN"
+  },
+  {
+    "file": "B-08_point_group.log",
+    "kind": "rule",
+    "expect": "B-08",
+    "forbid": [],
+    "note": "插入点群改变提示"
+  },
+  {
+    "file": "C-01_tm_low_basis.log",
+    "kind": "rule",
+    "expect": "C-01",
+    "forbid": [],
+    "note": "把一个 C 换成 Mo（Z=42），基组仍是 STO-3G"
+  },
+  {
+    "file": "C-02_spin_pollution.log",
+    "kind": "rule",
+    "expect": "C-02",
+    "forbid": [],
+    "note": "<S**2> 2.78 vs 理论 0.75，严重自旋污染"
+  },
+  {
+    "file": "C-03_anion_no_diffuse.log",
+    "kind": "rule",
+    "expect": "C-03",
+    "forbid": [],
+    "note": "阴离子 + STO-3G 无弥散"
+  },
+  {
+    "file": "C-04_tm_open_shell.log",
+    "kind": "rule",
+    "expect": "C-04",
+    "forbid": [],
+    "note": "开壳层体系里塞一个 Mo"
+  },
+  {
+    "file": "C-05_small_gap.log",
+    "kind": "rule",
+    "expect": "C-05",
+    "forbid": [],
+    "note": "HOMO 抬到 0.62 eV，间隙只剩 0.4 eV"
+  },
+  {
+    "file": "C-06_heavy_no_ecp.log",
+    "kind": "rule",
+    "expect": "C-06",
+    "forbid": [],
+    "note": "换成 I（Z=53），STO-3G 无 ECP"
+  },
+  {
+    "file": "C-07_route_basis_mismatch.log",
+    "kind": "rule",
+    "expect": "C-07",
+    "forbid": [],
+    "note": "route 声明 6-31G(d)，实际 Standard basis 仍是 STO-3G"
+  },
+  {
+    "file": "D-01_energy_jump.log",
+    "kind": "rule",
+    "expect": "D-01",
+    "forbid": [],
+    "note": "末次 SCF 能量跳 1 Ha（627 kcal/mol）"
+  },
+  {
+    "file": "D-02_no_thermal.log",
+    "kind": "rule",
+    "expect": "D-02",
+    "forbid": [],
+    "note": "破坏自由能字段，模拟热化学段缺失"
+  },
+  {
+    "file": "D-03_lumo_below_homo.log",
+    "kind": "rule",
+    "expect": "D-03",
+    "forbid": [],
+    "note": "LUMO 压到 HOMO 之下，轨道能级倒错"
+  },
+  {
+    "file": "D-07_virial.log",
+    "kind": "rule",
+    "expect": "D-07",
+    "forbid": [],
+    "note": "-V/T 偏离 2 达 0.55"
+  },
+  {
+    "file": "D-08_energy_up.log",
+    "kind": "rule",
+    "expect": "D-08",
+    "forbid": [],
+    "note": "优化末步能量回升 6.3 kcal/mol"
+  },
+  {
+    "file": "D-09_gibbs_inverted.log",
+    "kind": "rule",
+    "expect": "D-09",
+    "forbid": [],
+    "note": "E+ZPE 被压到 G 以下，热化学量倒挂"
+  },
+  {
+    "file": "E-02_no_energy.log",
+    "kind": "rule",
+    "expect": "E-02",
+    "forbid": [],
+    "note": "宣告正常终止但删光所有 SCF Done"
+  },
+  {
+    "file": "E-03_natoms_mismatch.log",
+    "kind": "rule",
+    "expect": "E-03",
+    "forbid": [],
+    "note": "坐标块多一个原子，与 NAtoms 不符"
+  },
+  {
+    "file": "E-04_parity.log",
+    "kind": "rule",
+    "expect": "E-04",
+    "forbid": [],
+    "note": "偶数电子配偶数多重度"
+  },
+  {
+    "file": "E-06_err_then_normal.log",
+    "kind": "rule",
+    "expect": "E-06",
+    "forbid": [],
+    "note": "中途崩了一段，最后还是宣告 Normal termination"
+  },
+  {
+    "file": "E-07_no_freqs.log",
+    "kind": "rule",
+    "expect": "E-07",
+    "forbid": [],
+    "note": "route 有 freq 但一条频率都没有"
+  },
+  {
+    "file": "E-08_multi_job.log",
+    "kind": "rule",
+    "expect": "E-08",
+    "forbid": [],
+    "note": "两段 link1，第二段基组从 STO-3G 换成 6-31G(d)"
+  },
+  {
+    "file": "realpos_B-03.log",
+    "kind": "rule",
+    "expect": "B-03",
+    "forbid": [],
+    "note": "dvb_ir 最低模 53 cm^-1 < 100，本就该提示准谐振校正"
+  },
+  {
+    "file": "realpos_D-07.log",
+    "kind": "rule",
+    "expect": "D-07",
+    "forbid": [],
+    "note": "真实 Mo4OCl4 簇 -V/T=2.678，含 ECP 的重元素体系天然偏大"
+  },
+  {
+    "file": "realpos_E-01.log",
+    "kind": "rule",
+    "expect": "E-01",
+    "forbid": [],
+    "note": "纯 opt 任务确实缺频率验证"
+  },
+  {
+    "file": "realpos_E-05.log",
+    "kind": "rule",
+    "expect": "E-05",
+    "forbid": [],
+    "note": "B3LYP 未加 D3，重原子 ≥ 6"
+  },
+  {
+    "file": "realpos_C-08.log",
+    "kind": "rule",
+    "expect": "C-08",
+    "forbid": [],
+    "note": "STO-3G 无极化函数，真实日志本身就该提示"
+  },
+  {
+    "file": "realpos_B-09.log",
+    "kind": "rule",
+    "expect": "B-09",
+    "forbid": [],
+    "note": "声明 opt=ts 却无虚频，真实 G16 产物，不是构造的"
+  },
+  {
+    "file": "realpos_B-10.log",
+    "kind": "rule",
+    "expect": "B-10",
+    "forbid": [],
+    "note": "H2 键长 5 Å，正常终止但体系已断成两个孤立氢"
+  },
+  {
+    "file": "sig+SIG-DISK-1.log",
+    "kind": "signature",
+    "expect": "SIG-DISK-1",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #2 Erroneous Write）"
+  },
+  {
+    "file": "sig-SIG-DISK-1.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-DISK-1"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-DISK-2.log",
+    "kind": "signature",
+    "expect": "SIG-DISK-2",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #2 Erroneous Write（变体 2/3））"
+  },
+  {
+    "file": "sig-SIG-DISK-2.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-DISK-2"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-MEM-1.log",
+    "kind": "signature",
+    "expect": "SIG-MEM-1",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #22 malloc failed）"
+  },
+  {
+    "file": "sig-SIG-MEM-1.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-MEM-1"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-MEM-2.log",
+    "kind": "signature",
+    "expect": "SIG-MEM-2",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #26 galloc）"
+  },
+  {
+    "file": "sig-SIG-MEM-2.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-MEM-2"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-IO-1.log",
+    "kind": "signature",
+    "expect": "SIG-IO-1",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #27 No such file or directory）"
+  },
+  {
+    "file": "sig-SIG-IO-1.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-IO-1"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-IN-1.log",
+    "kind": "signature",
+    "expect": "SIG-IN-1",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #7 End of file in GetChg）"
+  },
+  {
+    "file": "sig-SIG-IN-1.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-IN-1"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-IN-2.log",
+    "kind": "signature",
+    "expect": "SIG-IN-2",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #14 Symbol XXX not found in Z-matrix）"
+  },
+  {
+    "file": "sig-SIG-IN-2.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-IN-2"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-IN-3.log",
+    "kind": "signature",
+    "expect": "SIG-IN-3",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #17 End of file in ZSymb）"
+  },
+  {
+    "file": "sig-SIG-IN-3.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-IN-3"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-IN-4.log",
+    "kind": "signature",
+    "expect": "SIG-IN-4",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #19 Variable index out of range）"
+  },
+  {
+    "file": "sig-SIG-IN-4.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-IN-4"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-IN-5.log",
+    "kind": "signature",
+    "expect": "SIG-IN-5",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #20 Unknown center XXX）"
+  },
+  {
+    "file": "sig-SIG-IN-5.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-IN-5"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-IN-6.log",
+    "kind": "signature",
+    "expect": "SIG-IN-6",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #23 Charge and multiplicity card seems defective）"
+  },
+  {
+    "file": "sig-SIG-IN-6.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-IN-6"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-IN-7.log",
+    "kind": "signature",
+    "expect": "SIG-IN-7",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #24 Attempt to redefine unrecognized symbol）"
+  },
+  {
+    "file": "sig-SIG-IN-7.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-IN-7"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-GEO-1.log",
+    "kind": "signature",
+    "expect": "SIG-GEO-1",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #4 angle Alpha is outside the valid range）"
+  },
+  {
+    "file": "sig-SIG-GEO-1.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-GEO-1"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-GEO-2.log",
+    "kind": "signature",
+    "expect": "SIG-GEO-2",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #8 Change in point group or standard orientation）"
+  },
+  {
+    "file": "sig-SIG-GEO-2.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-GEO-2"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-GEO-3.log",
+    "kind": "signature",
+    "expect": "SIG-GEO-3",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #16 Problem with the distance matrix）"
+  },
+  {
+    "file": "sig-SIG-GEO-3.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-GEO-3"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-GEO-4.log",
+    "kind": "signature",
+    "expect": "SIG-GEO-4",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #11 FOPT requested but NVar）"
+  },
+  {
+    "file": "sig-SIG-GEO-4.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-GEO-4"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-GEO-5.log",
+    "kind": "signature",
+    "expect": "SIG-GEO-5",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #15 Variable X has invalid number of steps）"
+  },
+  {
+    "file": "sig-SIG-GEO-5.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-GEO-5"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-BAS-1.log",
+    "kind": "signature",
+    "expect": "SIG-BAS-1",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #5 Reading basis center）"
+  },
+  {
+    "file": "sig-SIG-BAS-1.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-BAS-1"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-BAS-2.log",
+    "kind": "signature",
+    "expect": "SIG-BAS-2",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #9 Unrecognized atomic symbol）"
+  },
+  {
+    "file": "sig-SIG-BAS-2.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-BAS-2"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-BAS-3.log",
+    "kind": "signature",
+    "expect": "SIG-BAS-3",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #12 Unable to project read-in occupied orbitals）"
+  },
+  {
+    "file": "sig-SIG-BAS-3.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-BAS-3"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-BAS-4.log",
+    "kind": "signature",
+    "expect": "SIG-BAS-4",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #13 KLT.ge.NIJTC in GetRSB）"
+  },
+  {
+    "file": "sig-SIG-BAS-4.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-BAS-4"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-BAS-5.log",
+    "kind": "signature",
+    "expect": "SIG-BAS-5",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #25 Inconsistency #2 in MakNEB）"
+  },
+  {
+    "file": "sig-SIG-BAS-5.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-BAS-5"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-SCF-1.log",
+    "kind": "signature",
+    "expect": "SIG-SCF-1",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #10 Convergence failure -- run terminated）"
+  },
+  {
+    "file": "sig-SIG-SCF-1.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-SCF-1"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-OPT-1.log",
+    "kind": "signature",
+    "expect": "SIG-OPT-1",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #3 Link 9999）"
+  },
+  {
+    "file": "sig-SIG-OPT-1.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-OPT-1"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-OPT-2.log",
+    "kind": "signature",
+    "expect": "SIG-OPT-2",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #21 Determination of dummy atom variables）"
+  },
+  {
+    "file": "sig-SIG-OPT-2.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-OPT-2"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-OPT-3.log",
+    "kind": "signature",
+    "expect": "SIG-OPT-3",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #18 Linear search skipped for unknown reason）"
+  },
+  {
+    "file": "sig-SIG-OPT-3.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-OPT-3"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "sig+SIG-FIL-1.log",
+    "kind": "signature",
+    "expect": "SIG-FIL-1",
+    "forbid": [],
+    "note": "嫁接官方原文（Master List #6 Operation on file out of range）"
+  },
+  {
+    "file": "sig-SIG-FIL-1.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-FIL-1"
+    ],
+    "note": "官方原文被扰动一个字符，该签名不应命中"
+  },
+  {
+    "file": "real_benzene_dimer.log.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-DISK-1",
+      "SIG-DISK-2",
+      "SIG-MEM-1",
+      "SIG-MEM-2",
+      "SIG-IO-1",
+      "SIG-IN-1",
+      "SIG-IN-2",
+      "SIG-IN-3",
+      "SIG-IN-4",
+      "SIG-IN-5",
+      "SIG-IN-6",
+      "SIG-IN-7",
+      "SIG-GEO-1",
+      "SIG-GEO-2",
+      "SIG-GEO-3",
+      "SIG-GEO-4",
+      "SIG-GEO-5",
+      "SIG-BAS-1",
+      "SIG-BAS-2",
+      "SIG-BAS-3",
+      "SIG-BAS-4",
+      "SIG-BAS-5",
+      "SIG-SCF-1",
+      "SIG-OPT-1",
+      "SIG-OPT-2",
+      "SIG-OPT-3",
+      "SIG-FIL-1"
+    ],
+    "note": "真实计算，签名层必须干净；且结果可用（允许 WARNING 级提示）"
+  },
+  {
+    "file": "real_C_bigbasis.out.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-DISK-1",
+      "SIG-DISK-2",
+      "SIG-MEM-1",
+      "SIG-MEM-2",
+      "SIG-IO-1",
+      "SIG-IN-1",
+      "SIG-IN-2",
+      "SIG-IN-3",
+      "SIG-IN-4",
+      "SIG-IN-5",
+      "SIG-IN-6",
+      "SIG-IN-7",
+      "SIG-GEO-1",
+      "SIG-GEO-2",
+      "SIG-GEO-3",
+      "SIG-GEO-4",
+      "SIG-GEO-5",
+      "SIG-BAS-1",
+      "SIG-BAS-2",
+      "SIG-BAS-3",
+      "SIG-BAS-4",
+      "SIG-BAS-5",
+      "SIG-SCF-1",
+      "SIG-OPT-1",
+      "SIG-OPT-2",
+      "SIG-OPT-3",
+      "SIG-FIL-1"
+    ],
+    "note": "真实计算，签名层必须干净；且结果可用（允许 WARNING 级提示）"
+  },
+  {
+    "file": "real_dvb_gopt.out.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-DISK-1",
+      "SIG-DISK-2",
+      "SIG-MEM-1",
+      "SIG-MEM-2",
+      "SIG-IO-1",
+      "SIG-IN-1",
+      "SIG-IN-2",
+      "SIG-IN-3",
+      "SIG-IN-4",
+      "SIG-IN-5",
+      "SIG-IN-6",
+      "SIG-IN-7",
+      "SIG-GEO-1",
+      "SIG-GEO-2",
+      "SIG-GEO-3",
+      "SIG-GEO-4",
+      "SIG-GEO-5",
+      "SIG-BAS-1",
+      "SIG-BAS-2",
+      "SIG-BAS-3",
+      "SIG-BAS-4",
+      "SIG-BAS-5",
+      "SIG-SCF-1",
+      "SIG-OPT-1",
+      "SIG-OPT-2",
+      "SIG-OPT-3",
+      "SIG-FIL-1"
+    ],
+    "note": "真实计算，签名层必须干净；且结果可用（允许 WARNING 级提示）"
+  },
+  {
+    "file": "real_dvb_ir.out.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-DISK-1",
+      "SIG-DISK-2",
+      "SIG-MEM-1",
+      "SIG-MEM-2",
+      "SIG-IO-1",
+      "SIG-IN-1",
+      "SIG-IN-2",
+      "SIG-IN-3",
+      "SIG-IN-4",
+      "SIG-IN-5",
+      "SIG-IN-6",
+      "SIG-IN-7",
+      "SIG-GEO-1",
+      "SIG-GEO-2",
+      "SIG-GEO-3",
+      "SIG-GEO-4",
+      "SIG-GEO-5",
+      "SIG-BAS-1",
+      "SIG-BAS-2",
+      "SIG-BAS-3",
+      "SIG-BAS-4",
+      "SIG-BAS-5",
+      "SIG-SCF-1",
+      "SIG-OPT-1",
+      "SIG-OPT-2",
+      "SIG-OPT-3",
+      "SIG-FIL-1"
+    ],
+    "note": "真实计算，签名层必须干净；且结果可用（允许 WARNING 级提示）"
+  },
+  {
+    "file": "real_dvb_sp.out.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-DISK-1",
+      "SIG-DISK-2",
+      "SIG-MEM-1",
+      "SIG-MEM-2",
+      "SIG-IO-1",
+      "SIG-IN-1",
+      "SIG-IN-2",
+      "SIG-IN-3",
+      "SIG-IN-4",
+      "SIG-IN-5",
+      "SIG-IN-6",
+      "SIG-IN-7",
+      "SIG-GEO-1",
+      "SIG-GEO-2",
+      "SIG-GEO-3",
+      "SIG-GEO-4",
+      "SIG-GEO-5",
+      "SIG-BAS-1",
+      "SIG-BAS-2",
+      "SIG-BAS-3",
+      "SIG-BAS-4",
+      "SIG-BAS-5",
+      "SIG-SCF-1",
+      "SIG-OPT-1",
+      "SIG-OPT-2",
+      "SIG-OPT-3",
+      "SIG-FIL-1"
+    ],
+    "note": "真实计算，签名层必须干净；且结果可用（允许 WARNING 级提示）"
+  },
+  {
+    "file": "real_dvb_un_sp_b.log.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-DISK-1",
+      "SIG-DISK-2",
+      "SIG-MEM-1",
+      "SIG-MEM-2",
+      "SIG-IO-1",
+      "SIG-IN-1",
+      "SIG-IN-2",
+      "SIG-IN-3",
+      "SIG-IN-4",
+      "SIG-IN-5",
+      "SIG-IN-6",
+      "SIG-IN-7",
+      "SIG-GEO-1",
+      "SIG-GEO-2",
+      "SIG-GEO-3",
+      "SIG-GEO-4",
+      "SIG-GEO-5",
+      "SIG-BAS-1",
+      "SIG-BAS-2",
+      "SIG-BAS-3",
+      "SIG-BAS-4",
+      "SIG-BAS-5",
+      "SIG-SCF-1",
+      "SIG-OPT-1",
+      "SIG-OPT-2",
+      "SIG-OPT-3",
+      "SIG-FIL-1"
+    ],
+    "note": "真实计算，签名层必须干净；且结果可用（允许 WARNING 级提示）"
+  },
+  {
+    "file": "real_h2_dissociated.log.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-DISK-1",
+      "SIG-DISK-2",
+      "SIG-MEM-1",
+      "SIG-MEM-2",
+      "SIG-IO-1",
+      "SIG-IN-1",
+      "SIG-IN-2",
+      "SIG-IN-3",
+      "SIG-IN-4",
+      "SIG-IN-5",
+      "SIG-IN-6",
+      "SIG-IN-7",
+      "SIG-GEO-1",
+      "SIG-GEO-2",
+      "SIG-GEO-3",
+      "SIG-GEO-4",
+      "SIG-GEO-5",
+      "SIG-BAS-1",
+      "SIG-BAS-2",
+      "SIG-BAS-3",
+      "SIG-BAS-4",
+      "SIG-BAS-5",
+      "SIG-SCF-1",
+      "SIG-OPT-1",
+      "SIG-OPT-2",
+      "SIG-OPT-3",
+      "SIG-FIL-1"
+    ],
+    "note": "真实计算，签名层必须干净；但结果不可用，不参与「成功日志」统计"
+  },
+  {
+    "file": "real_Mo4OCl4-sp.log.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-DISK-1",
+      "SIG-DISK-2",
+      "SIG-MEM-1",
+      "SIG-MEM-2",
+      "SIG-IO-1",
+      "SIG-IN-1",
+      "SIG-IN-2",
+      "SIG-IN-3",
+      "SIG-IN-4",
+      "SIG-IN-5",
+      "SIG-IN-6",
+      "SIG-IN-7",
+      "SIG-GEO-1",
+      "SIG-GEO-2",
+      "SIG-GEO-3",
+      "SIG-GEO-4",
+      "SIG-GEO-5",
+      "SIG-BAS-1",
+      "SIG-BAS-2",
+      "SIG-BAS-3",
+      "SIG-BAS-4",
+      "SIG-BAS-5",
+      "SIG-SCF-1",
+      "SIG-OPT-1",
+      "SIG-OPT-2",
+      "SIG-OPT-3",
+      "SIG-FIL-1"
+    ],
+    "note": "真实计算，签名层必须干净；且结果可用（允许 WARNING 级提示）"
+  },
+  {
+    "file": "real_ts_no_imag.log.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-DISK-1",
+      "SIG-DISK-2",
+      "SIG-MEM-1",
+      "SIG-MEM-2",
+      "SIG-IO-1",
+      "SIG-IN-1",
+      "SIG-IN-2",
+      "SIG-IN-3",
+      "SIG-IN-4",
+      "SIG-IN-5",
+      "SIG-IN-6",
+      "SIG-IN-7",
+      "SIG-GEO-1",
+      "SIG-GEO-2",
+      "SIG-GEO-3",
+      "SIG-GEO-4",
+      "SIG-GEO-5",
+      "SIG-BAS-1",
+      "SIG-BAS-2",
+      "SIG-BAS-3",
+      "SIG-BAS-4",
+      "SIG-BAS-5",
+      "SIG-SCF-1",
+      "SIG-OPT-1",
+      "SIG-OPT-2",
+      "SIG-OPT-3",
+      "SIG-FIL-1"
+    ],
+    "note": "真实计算，签名层必须干净；但结果不可用，不参与「成功日志」统计"
+  },
+  {
+    "file": "real_water_ccsd.log.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-DISK-1",
+      "SIG-DISK-2",
+      "SIG-MEM-1",
+      "SIG-MEM-2",
+      "SIG-IO-1",
+      "SIG-IN-1",
+      "SIG-IN-2",
+      "SIG-IN-3",
+      "SIG-IN-4",
+      "SIG-IN-5",
+      "SIG-IN-6",
+      "SIG-IN-7",
+      "SIG-GEO-1",
+      "SIG-GEO-2",
+      "SIG-GEO-3",
+      "SIG-GEO-4",
+      "SIG-GEO-5",
+      "SIG-BAS-1",
+      "SIG-BAS-2",
+      "SIG-BAS-3",
+      "SIG-BAS-4",
+      "SIG-BAS-5",
+      "SIG-SCF-1",
+      "SIG-OPT-1",
+      "SIG-OPT-2",
+      "SIG-OPT-3",
+      "SIG-FIL-1"
+    ],
+    "note": "真实计算，签名层必须干净；且结果可用（允许 WARNING 级提示）"
+  },
+  {
+    "file": "real_water_dimer.log.log",
+    "kind": "negative",
+    "expect": "",
+    "forbid": [
+      "SIG-DISK-1",
+      "SIG-DISK-2",
+      "SIG-MEM-1",
+      "SIG-MEM-2",
+      "SIG-IO-1",
+      "SIG-IN-1",
+      "SIG-IN-2",
+      "SIG-IN-3",
+      "SIG-IN-4",
+      "SIG-IN-5",
+      "SIG-IN-6",
+      "SIG-IN-7",
+      "SIG-GEO-1",
+      "SIG-GEO-2",
+      "SIG-GEO-3",
+      "SIG-GEO-4",
+      "SIG-GEO-5",
+      "SIG-BAS-1",
+      "SIG-BAS-2",
+      "SIG-BAS-3",
+      "SIG-BAS-4",
+      "SIG-BAS-5",
+      "SIG-SCF-1",
+      "SIG-OPT-1",
+      "SIG-OPT-2",
+      "SIG-OPT-3",
+      "SIG-FIL-1"
+    ],
+    "note": "真实计算，签名层必须干净；且结果可用（允许 WARNING 级提示）"
+  }
+]

@@ -1,0 +1,11 @@
+%nprocshared=1
+%mem=512MB
+#p B3LYP/NOT-A-BASIS
+
+unknown basis set name
+
+0 1
+O   0.0000   0.0000   0.1173
+H   0.0000   0.7572  -0.4692
+H   0.0000  -0.7572  -0.4692
+

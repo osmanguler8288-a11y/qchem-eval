@@ -1,0 +1,11 @@
+%nprocshared=1
+%mem=1GB
+#p B3LYP/6-31G(d) opt=(maxcyc=1)
+
+forced optimisation truncation
+
+0 1
+O   0.0000   0.0000   0.1173
+H   0.0000   0.7572  -0.4692
+H   0.0000  -0.7572  -0.4692
+

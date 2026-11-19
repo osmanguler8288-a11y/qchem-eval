@@ -1,0 +1,553 @@
+# =============================================================================
+# qchem-eval 规则清单 v0.2
+#
+# 每条规则四个必填要素（缺一不可，这是「可裁定」的定义）：
+#   requires  —— 判定所依赖的字段；任一缺失 => UNKNOWN（**不是 PASS**）
+#   when      —— 判定表达式（对 CalcData 实例 d 求值）
+#   evidence  —— 依据文本，{} 里填 CalcData 字段，缺失会显示 <字段 缺失>
+#   fix       —— 用户下一步该做什么
+#
+#    来源标记（写在 tag 里）：
+#   [Q] QMCert (MIT, pip install qmcert)     [A] AiiDA / atomate exit code
+#   [K] Kulik 组论文阈值                      [G] GoodVibes 准谐振校正
+#   [C] cclib 解析约定                        [M] 本系统新增（开源无对应实现）
+#
+#   applies   —— 可选。为 False 时状态是 na（不适用），**不计入覆盖率分母**。
+#                这个三态区分是必要的：opt-only 任务去问「有没有虚频」不是缺数据，
+#                是这类任务根本没有这个检查项。把 na 混进 unknown 会让覆盖率虚低。
+#
+# 严重级别与结论的关系在 engine.py：CRITICAL=>FAIL, MAJOR|MINOR=>WARNING
+# =============================================================================
+
+meta:
+  version: "0.6"
+  n_rules: 39
+  notes: |
+    coverage: A≈90% B≈90% C≈25% D≈75% E≈95%
+    C 类（方法-体系匹配）在开源世界里基本是空白，这里的 8 条是自建。
+    v0.3 新增 14 条，全部只依赖解析器已确认能取到的字段（见 tools/eval_rules.py
+    的规则级 P/R 报告）。不新增「解析器取不到 → 永远 UNKNOWN」的空规则。
+    v0.4 新增 C-07/C-08：前者查「route 声明的基组 ≠ 实际用的基组」，后者查有机
+    体系用无极化函数基组。两条都依赖 v0.4 修好的 Standard basis 解析
+    （旧版会把 6-31G(d) 截成 6-31G）。
+    v0.5 新增 B-09：route 声明 opt=ts 但频率全为正（说明落到极小点、搜的不是
+    过渡态）。这条是 2026-11-18 在 cu04 上用真实 G16 跑出来的缺口 —— 用
+    opt=(ts,calcfc,noeigentest) 优化 HCN 时 Gaussian 收敛到极小点、无虚频，
+    而旧规则集对此判 PASS 100 分。
+    v0.5 同时**更正** C-07 的病因说明：实测 G16 Rev A.03 下 guess=read 与
+    geom=allcheck 都不会让 chk 覆盖 route 声明的基组，原 fix 文本是错的。
+    v0.6 新增 B-10「分子散成多个互不相连的片段」。起因是实测 6 种明显错误的
+    结构：原子完全重合的两份 Gaussian 直接拒算（Atoms too close），引擎靠
+    签名层就抓住了；但 H2 键长写成 5 Å 时 Gaussian 认认真真算完、正常终止、
+    能量 -0.599 看着像个数字，旧规则集给 90 分。B-10 用共价半径把末帧几何
+    切成连通片段，片段间距 > 4.5 Å 就判散架。阈值 4.5 的依据：氢键 1.5–2.2、
+    π 堆积 3.3–3.8、范德华接触上限约 4.0，超过之后两个片段之间已无化学作用。
+    阈值有实测护栏：在 cu04 上真跑了三个体系（水二聚体 O···O 2.98、苯二聚体
+    层间 3.46、两个 H2 相距 10 Å）。前两个都切成 2 个片段但不该报，实测确实
+    没报；第三个间距 9.26 应当报，实测报了。    这两份复合物已收进 tests/data，
+    谁把阈值往下调到 3.0 附近，苯二聚体立刻红。
+    v0.6 同时**改写** E-08：原判据是「文件里有 >= 2 段 link1」，而 opt freq
+    在 Gaussian 内部必定拆成两段，于是每份正常的 opt freq 都会响一条 info
+    ——那是噪音不是发现。改为逐段比对 route 声明的方法/基组，只在去重后 >= 2 种
+    （即段与段之间真的换了方法）时报，级别 info -> major：opt 用 STO-3G 搜几何、
+    freq 换 6-31G(d) 算 Hessian，频率与几何根本不自洽，这是真问题。
+    改这条时踩到两个静默坑，都值得留在这里：
+      · `_strip_spin_prefix` 只判大写前缀，而 route 是先小写再进去的，于是
+        第二段的 `RB3LYP` 归一化成 `rb3lyp`，被当成"换了泛函"——归一化
+        本身失效，比不归一化更难发现（现象是正常日志误报）。
+      · 顺手给 CalcData 加字段时把已有的 `route_basis` 字段声明覆盖掉了。
+        dataclass 没有 slots，`d.route_basis = ...` 照样赋值成功、vars(d) 照样
+        能取到，测试全绿——字段声明没了这件事没有任何表现。已补回。
+
+rules:
+
+  # ---------------- A 收敛性 ----------------
+  - id: A-01
+    category: A-收敛性
+    severity: critical
+    title: 计算未正常终止
+    tag: "[Q][A]"
+    requires: [normal_termination]
+    when: "not d.normal_termination"
+    evidence: "未检测到 Normal termination。已捕获异常段：{err}"
+    fix: "先看 .log 末尾 Error termination 的上一屏，通常是 SCF 不收敛、几何优化崩掉或内存/磁盘不足。修掉根因再重跑，不要在没终止的计算上取能量。"
+    action: rerun
+
+  - id: A-02
+    category: A-收敛性
+    severity: critical
+    title: SCF 未收敛
+    tag: "[Q][A410]"
+    requires: [scf_converged]
+    when: "d.scf_converged is False"
+    evidence: "出现 Convergence failure，SCF 在 {scf_maxcycle} 步上限内未达收敛限。"
+    fix: "依次尝试：加 int=ultrafine、加 scf=maxcycle=256, scf=qc（二次收敛）、scf=xqc；若是过渡金属开壳层，改用 guess=mix 或先用 fragment guess 生成初猜。"
+    action: rerun
+
+  - id: A-03
+    category: A-收敛性
+    severity: minor
+    title: SCF 收敛步数接近上限
+    tag: "[M]"
+    requires: [scf_cycles, scf_maxcycle]
+    when: "d.scf_cycles[-1] >= 0.8 * d.scf_maxcycle"
+    evidence: "末次 SCF 用 {last_cycles} 步，上限 {scf_maxcycle} 步（已用超 80%）。"
+    fix: "虽然这次收敛了，但换一个构型/基组极可能翻车。提前加 scf=maxcycle=256 并把初猜改成 guess=read，省下一轮返工。"
+    action: human_review
+
+  - id: A-04
+    category: A-收敛性
+    severity: minor
+    title: SCF 收敛缓慢
+    tag: "[M]"
+    requires: [scf_cycles]
+    when: "d.scf_cycles[-1] > 50"
+    evidence: "末次 SCF 用了 {last_cycles} 步（经验上 < 30 步属正常）。"
+    fix: "通常是初猜质量差或体系近简并。检查 HOMO-LUMO 间隙与占据数；必要时用更小基组先做一次再 guess=read。"
+    action: human_review
+
+  - id: A-05
+    category: A-收敛性
+    severity: critical
+    title: 几何优化未收敛
+    tag: "[Q][A531]"
+    applies: "'opt' in d.stages"
+    requires: [opt_converged]
+    when: "d.opt_converged is False"
+    evidence: "优化在 {opt_steps} 步后结束但四判据未全为 YES。末次判据：{opt_table}"
+    fix: "先 opt=calcfc 补齐 Hessian 再续跑（opt=restart），或用 opt=(maxstep=10,calcfc) 减小步长。别直接拿未收敛构型做频率。"
+    action: rerun
+
+  - id: A-06
+    category: A-收敛性
+    severity: major
+    title: SCF 打出 SCF Done 但密度未达收敛判据
+    tag: "[M]"
+    requires: [scf_conv]
+    when: "d.scf_conv[-1] > 10 * conv_tol_num"
+    evidence: "末次 SCF 的 Conv = {conv_last}，判据 {conv_tol}（来源：{conv_tol_src}），超出 {conv_ratio} 倍。"
+    fix: "Gaussian 在跑满 maxcycle 之后仍会打印 SCF Done，此时电子能并没有真正收敛——这是最隐蔽的一类「算完了但是废的」。用 scf=(maxcycle=256,xqc) 重跑，或先降基组取初猜再 guess=read 上目标级别。"
+    action: rerun
+
+  - id: A-07
+    category: A-收敛性
+    severity: minor
+    title: SCF 迭代过程中出现能量上升
+    tag: "[M]"
+    requires: [scf_trace]
+    when: "any(t.get('rises') for t in d.scf_trace)"
+    evidence: "{n_rises} / {n_trace} 步 SCF 迭代能量上升（Rises=T）。"
+    fix: "能量非单调下降说明 SCF 在抖。先看 Damp 是否已被 Gaussian 自动打开；持续抖动时用 scf=(qc) 或 iop(5/13=1) 关掉 DIIS 换用阻尼收敛。这类计算即使最后收敛，末位数字也不可信。"
+    action: human_review
+
+  # ---------------- B 结构合理性 ----------------
+  - id: B-01
+    category: B-结构合理性
+    severity: critical
+    title: 极小值点存在多于一个虚频
+    tag: "[Q]"
+    applies: "'freq' in d.stages"
+    requires: [n_imag]
+    when: "d.n_imag >= 2"
+    evidence: "检出 {n_imag} 个虚频，最负 {min_freq} cm^-1。"
+    fix: "体系没停在极小值上（多半停在鞍点或优化早停）。沿最负虚频方向做 distort 后重优化；若是柔性分子，放松 opt=(tight) 并降对称性 (nosymm)。"
+    action: rerun
+
+  - id: B-02
+    category: B-结构合理性
+    severity: major
+    title: 存在一个虚频
+    tag: "[Q]"
+    applies: "'freq' in d.stages"
+    requires: [n_imag]
+    when: "d.n_imag == 1"
+    evidence: "检出 1 个虚频，波数 {min_freq} cm^-1。"
+    fix: "若目标是极小值 => 失败，需 distort 重优化；若目标是过渡态 (opt=ts) => 正常，但必须做 IRC 确认连接的是预期的两个极小值。"
+    action: human_review
+
+  - id: B-03
+    category: B-结构合理性
+    severity: minor
+    title: 低频模需准谐振校正
+    tag: "[Q][G]"
+    applies: "'freq' in d.stages"
+    requires: [freqs]
+    when: "d.freqs and min(d.freqs) < 100"
+    evidence: "最低振动模 {min_freq} cm^-1 < 100 cm^-1，谐振近似下 ZPE/熵误差可达 1 kcal/mol 量级。"
+    fix: "用 GoodVibes 做准谐振校正（--qs 或 --freq_cutoff 100），否则自由能比较会有系统偏差。"
+    action: human_review
+
+  - id: B-04
+    category: B-结构合理性
+    severity: minor
+    title: 虚频绝对值极小，疑似数值噪声
+    tag: "[M]"
+    applies: "'freq' in d.stages"
+    requires: [n_imag, freqs]
+    when: "d.n_imag and d.n_imag > 0 and min(d.freqs) > -50"
+    evidence: "最负振动模 {min_freq} cm^-1，量级已接近谐振分析的数值精度。"
+    fix: "多半是积分网格不够细而非真鞍点。改用 int=ultrafine（或 int=(ultrafine,acc2e=12)）重算频率，往往虚频直接消失。"
+    action: human_review
+
+  - id: B-05
+    category: B-结构合理性
+    severity: critical
+    title: 末帧几何存在原子重叠
+    tag: "[M]"
+    requires: [min_atom_distance]
+    when: "min_dist < 0.6"
+    evidence: "最后一帧几何的最小原子间距 {min_dist} Å，短于最短的常规化学键（H–H 约 0.74 Å）。"
+    fix: "优化已经把结构跑散了（步长失控、内坐标转换出错，或初始构型里两个原子定义在同一位置）。回退到上一轮收敛构型，用 opt=(maxstep=10) 重启；同时检查输入 z-matrix 的二面角有没有丢负号。"
+    action: rerun
+
+  - id: B-06
+    category: B-结构合理性
+    severity: info
+    title: 体系含虚原子（X / Bq）
+    tag: "[C]"
+    requires: [has_dummy_atoms]
+    when: "d.has_dummy_atoms is True"
+    evidence: "元素列表中出现了原子序数 0 的虚原子。"
+    fix: "做 counterpoise 校正（ghost atom）时这是正常的，可忽略；若不是有意为之，虚原子会占用自由度并污染频率计算（多出 3N 个近零模），需要从输入里删掉。"
+    action: accept
+
+  - id: B-07
+    category: B-结构合理性
+    severity: major
+    title: 振动频率出现非有限数值
+    tag: "[M]"
+    applies: "'freq' in d.stages"
+    requires: [freqs]
+    when: "any(f != f or abs(f) > 1e6 for f in d.freqs)"
+    evidence: "频率列表中存在 NaN/Inf 或量级离谱的值（共 {n_freqs} 个频率）。"
+    fix: "通常是频率计算中途数值崩坏（几何接近原子重合、或积分网格严重不足）。先确认几何合理，再用 int=ultrafine 重算频率；NaN 出现时 ZPE 与热校正全为废值，不能用于任何自由能比较。"
+    action: rerun
+
+  - id: B-08
+    category: B-结构合理性
+    severity: minor
+    title: 优化过程中点群/标准取向发生改变
+    tag: "[M]"
+    requires: [n_point_group_changes]
+    when: "d.n_point_group_changes > 0"
+    evidence: "日志出现 {n_point_group_changes} 次 Change in point group。"
+    fix: "对称性在优化中降了子群，意味着起点的高对称假设不成立。后续所有基于对称性的分析（简并度、选择定则、IRC 方向）都要重做；跨构型比较时建议统一加 nosymm 消除这层不确定性。"
+    action: human_review
+
+  - id: B-09
+    category: B-结构合理性
+    severity: major
+    title: 声称优化过渡态，但频率全为正
+    tag: "[M]"
+    # requires 里带上 route：route 没解析到时先判 UNKNOWN（计入覆盖率分母），
+    # 而不是让 applies 里的 None 静默短路成 na（不计入分母 = 从指标里蒸发）。
+    requires: [n_imag, route]
+    applies: "'freq' in d.stages and d.declares_ts"
+    when: "d.n_imag == 0"
+    evidence: "route 声明了 opt=ts（寻找一阶鞍点），但频率计算没有检出任何虚频。"
+    fix: "这说明优化落到了极小点，搜出来的不是过渡态。三个常见原因：① 初始结构离鞍点太远；② 用了 noeigentest，Gaussian 因此在无虚频时也会判收敛（实测 G16 上确实会这样，别把它当保险）；③ 本来该上坡的方向走了下坡。要拿到真鞍点：先用 relaxed scan 或 QST2/QST3 逼近，再 opt=(ts,calcfc) 并核对虚频振动模式是否对应预期反应坐标；拿到后必须做 IRC 确认它连接的是你预期的两个极小值。"
+    action: human_review
+
+  - id: B-10
+    category: B-结构合理性
+    severity: major
+    title: 分子散成多个互不相连的片段
+    tag: "[M]"
+    # requires 只放 n_fragments。fragment_gap 在只有一个片段时无定义，
+    # 放进 requires 会让所有正常分子都判成 UNKNOWN。when 里靠 `and` 短路，
+    # 保证 frag_gap 只在 n_frag >= 2 时才被求值（那时它一定已注入）。
+    requires: [n_fragments]
+    when: "n_frag >= 2 and frag_gap > 4.5"
+    evidence: "末帧几何按共价半径切分后得到 {n_frag} 个互不相连的片段，最近的片段间距离 {frag_gap} Å，已远超任何分子间作用力的范围（氢键 1.5–2.2 Å、π 堆积 3.3–3.8 Å、范德华接触上限约 4.0 Å）。"
+    fix: "体系不是一个分子，而是一堆没有化学联系的碎片。能量、频率、热化学量在这个构型下都没有意义（它们只对「一个连续的分子」定义）。先看是哪一片离群：① 坐标块里少写了原子或某几行被截断；② 多个片段拼接时忘了对齐坐标系（各片段各自以质心为原点）；③ 几何优化中途跑散了 —— 这种情况通常同时命中 B-05（原子间距过短）。如果你**本来就**在算两个无关分子的非相互作用极限（BSSE 校正要用），这条可以忽略；但那种算例应当用 fragment guess 或 counterpoise 显式声明，而不是把两坨坐标扔进一个输入。"
+    action: human_review
+
+  # ---------------- C 方法-体系匹配（开源空白区）----------------
+  - id: C-01
+    category: C-方法匹配
+    severity: major
+    title: 过渡金属体系使用了不含 ECP 的小基组
+    tag: "[M]"
+    requires: [atomic_numbers, basis]
+    when: "d.has_transition_metal and d.basis_is_low_quality_for_tm"
+    evidence: "体系含过渡金属（Z={tm_zs}），基组为 {basis}——该基组对过渡金属无有效核势，3d/4d 电子描述严重失真。"
+    fix: "换成 def2-SVP / def2-TZVP（配 def2-ECP）或 LANL2DZ。这是硬错误，不是精度问题。"
+    action: escalate
+
+  - id: C-02
+    category: C-方法匹配
+    severity: major
+    title: 开壳层体系存在显著自旋污染
+    tag: "[Q][C]"
+    applies: "bool(d.unrestricted)"
+    requires: [s2, s2_expected]
+    when: "abs(d.s2 - d.s2_expected) > max(0.1 * d.s2_expected, 0.02)"
+    evidence: "<S**2> = {s2}，理论值 {s2_expected}，偏差 {s2_dev}。"
+    fix: "单参考波函数已被污染。要么加 UHF->UDFT 并用对称破缺初猜，要么升级到 ROHF/多参考 (CASSCF/NEVPT2)。至少把 <S**2> 报出来，别当作自旋纯态用。"
+    action: escalate
+
+  - id: C-03
+    category: C-方法匹配
+    severity: major
+    title: 阴离子体系缺少弥散函数
+    tag: "[M]"
+    requires: [charge, basis]
+    when: "d.charge < 0 and not any(k in d.basis.lower() for k in ('aug', '+'))"
+    evidence: "电荷 {charge}，基组 {basis} 无弥散函数——阴离子的额外电子会「跑掉」，EA/HOMO 完全不可信。"
+    fix: "至少用 6-31+G* 或 ma-def2-SVP/aug-cc-pVDZ。若算的是垂直电子亲和能，弥散函数是必需项而非可选项。"
+    action: rerun
+
+  - id: C-04
+    category: C-方法匹配
+    severity: minor
+    title: 过渡金属开壳层体系未声明自旋态检验
+    tag: "[M]"
+    requires: [atomic_numbers, multiplicity]
+    when: "d.has_transition_metal and d.multiplicity > 1"
+    evidence: "含过渡金属且多重度 = {multiplicity}，当前只算了一个自旋态。"
+    fix: "d 区体系的基态自旋态常在 2S+1 之间相差几个 kcal/mol。至少把低 2 个自旋态各算一遍比较相对能量，否则「这个自旋态是最低」是未经验证的假设。"
+    action: human_review
+
+  - id: C-05
+    category: C-方法匹配
+    severity: minor
+    title: HOMO-LUMO 间隙极小，单参考方法风险高
+    tag: "[M]"
+    requires: [homo_ev, lumo_ev]
+    when: "0 < d.lumo_ev - d.homo_ev < 0.5"
+    evidence: "HOMO = {homo_ev} eV，LUMO = {lumo_ev} eV，间隙仅 {gap_ev} eV。"
+    fix: "间隙小于 0.5 eV 时轨道近简并，单参考 DFT/MP2 的基态可能选错，开壳层体系还容易自旋污染。此时应做对称破缺计算验证，或至少把 TDA/TDDFT 最低激发能一并报出来佐证基态稳定。"
+    action: escalate
+
+  - id: C-06
+    category: C-方法匹配
+    severity: major
+    title: 含重元素但基组未带有效核势
+    tag: "[M]"
+    requires: [atomic_numbers, basis]
+    when: "any(z >= 37 for z in d.atomic_numbers) and not any(k in d.basis.lower() for k in ('lanl', 'sdd', 'def2', 'crenbl', 'stuttgart', 'dhf', 'mdf', 'ecp'))"
+    evidence: "体系含 Z ≥ 37 的重元素（Z={heavy_zs}），基组 {basis} 未声明有效核势。"
+    fix: "第五周期以后标量相对论效应已不可忽略，全电子基组需要 x2c/dhf 配套。换 def2-TZVP（Gaussian 对 Z>36 自动配 def2-ECP）、SDD 或 LANL2DZ；只加极化函数不解决相对论收缩问题。"
+    action: escalate
+
+  - id: C-07
+    category: C-方法匹配
+    severity: major
+    title: route 声明的基组与实际使用的基组不一致
+    tag: "[M]"
+    # 只在「全文只声明了一种方法/基组」时判。多段作业里各段本来就可以各写各的，
+    # 拿**首段**的声明去比**末段**的实际使用，必然不等 —— 那是 E-08 的地盘，
+    # 同因双罚会把同一件事扣两次分（实测 ok_link2_diff：E-08 + C-07 各扣 15）。
+    applies: "n_route_methods <= 1"
+    requires: [route_basis, basis]
+    when: "route_basis_n != basis_n and route_basis_n not in ('gen', 'genecp')"
+    evidence: "route 声明 {route_basis}，实际使用 {basis}（取自 Standard basis）。"
+    fix: "先查这三处：① 日志是否被拼接或手工编辑过（这最常见——发布前改过输出、或用 cat 合并过文件）；② 是否把 chk 里的旧结果当成了本次运行（看 archive 段的日期与机名是否与本次作业一致）；③ 是否混用了不同 Gaussian 版本的输出片段。**注意**：实测 Gaussian 16 A.03 下，即使 route 同时带 guess=read 与 geom=allcheck，基组仍以 route 声明为准、不会从 chk 继承，所以不要拿这个当解释。无论原因是什么，报告里写的方法必须和实际执行一致，否则结果不可复现。"
+    action: human_review
+
+  - id: C-08
+    category: C-方法匹配
+    severity: minor
+    # 原标题写的是「有机体系」，但判据里没有任何「有机」的条件 —— 它只排除
+    # 重元素（Z>=37）和带极化函数的基组，所以 H2、H2O 一样会被判。
+    # 与其把判据改窄（那会漏掉真正需要提示的无机小分子），不如把名字改准。
+    title: 使用不含极化函数的基组
+    tag: "[M]"
+    requires: [basis, atomic_numbers]
+    applies: "not d.has_transition_metal"
+    when: "not any(z >= 37 for z in d.atomic_numbers) and not any(k in d.basis.lower() for k in ('(', 'def2', 'cc-pv', 'aug-', 'ano', 'sadlej', 'svp', 'pvdz', 'pvtz'))"
+    evidence: "基组 {basis} 不含极化函数；体系 {n_heavy} 个重原子（Z≥2 的非氢原子），不含过渡金属。"
+    fix: "没有极化函数时键角、二面角和相对能都会系统性偏差，共轭体系与氢键二聚体尤其明显。几何优化至少 6-31G(d)，能量与相对能建议 6-311++G(2d,2p) 或 def2-TZVP。STO-3G / 3-21G 适合跑通流程和教学演示，不适合用来出结论。像 H2 这种没有重原子的体系，极化函数影响小得多，但既然要算结合能或做对比，仍建议换基组。"
+    action: human_review
+
+  # ---------------- D 数值一致性 ----------------
+  - id: D-01
+    category: D-数值一致性
+    severity: major
+    title: 优化轨迹出现能量突跳
+    tag: "[M]"
+    applies: "'opt' in d.stages"
+    requires: [scf_energies]
+    when: "len(d.scf_energies) >= 2 and abs(d.scf_energies[-1] - d.scf_energies[-2]) * 627.509474 > 500"
+    evidence: "最后两步 SCF 能量相差 {de_kcal} kcal/mol，远超单步几何弛豫的合理范围。"
+    fix: "优化中途跳到了另一个电子态或另一个构型盆地（SCF 找到不同解）。用 guess=read + opt=restart 锁住解，或先做小步长优化确认没有结构断键。"
+    action: rerun
+
+  - id: D-02
+    category: D-数值一致性
+    severity: minor
+    title: 频率任务未产出热化学量
+    tag: "[C]"
+    applies: "'freq' in d.stages"
+    requires: [stages]
+    when: "'freq' in d.stages and d.gibbs_energy is None"
+    evidence: "检测到频率计算阶段，但未找到 Sum of electronic and thermal Free Energies。"
+    fix: "检查是否用了 freq=(num) 之外的截断，或频率计算未走完热化学段。自由能比较的前提是 ZPE 与热校正齐全。"
+    action: rerun
+
+  - id: D-03
+    category: D-数值一致性
+    severity: major
+    title: 轨道能级倒错（LUMO 不高于 HOMO）
+    tag: "[M]"
+    requires: [homo_ev, lumo_ev]
+    when: "d.lumo_ev <= d.homo_ev"
+    evidence: "HOMO = {homo_ev} eV，LUMO = {lumo_ev} eV，间隙 {gap_ev} eV ≤ 0。"
+    fix: "占据数或电子数读错了（电荷/多重度写错，或解析到了不同自旋通道的轨道）。回查 %chg 与 %mult。"
+    action: human_review
+
+  - id: D-07
+    category: D-数值一致性
+    severity: minor
+    title: 维里比 -V/T 明显偏离 2
+    tag: "[M]"
+    requires: [virial_ratio]
+    when: "abs(d.virial_ratio - 2.0) > 0.5"
+    evidence: "-V/T = {virial_ratio}（偏差 {vt_dev}），理论值为 2.0000。"
+    fix: "维里比偏离 2 是基组不完备与波函数未充分收敛的联合指标。先确认 SCF 真的收敛；收敛了还偏说明基组太小时——加极化/弥散函数比重算更多位数有用。含 ECP 的重元素体系天然偏大，可结合 family 调高阈值。"
+    action: human_review
+
+  - id: D-08
+    category: D-数值一致性
+    severity: minor
+    title: 优化最后一步能量上升
+    tag: "[M]"
+    applies: "'opt' in d.stages"
+    requires: [scf_energies]
+    when: "len(d.scf_energies) >= 2 and (d.scf_energies[-1] - d.scf_energies[-2]) * kcal > 1.0"
+    evidence: "最后两步能量由 {e_prev} Ha 升至 {e_last} Ha（+{de_up_kcal} kcal/mol）。"
+    fix: "收敛构型上出现能量回升，通常是最后一步跨到了另一个电子态，或 Hessian 更新失真。用 opt=calcfc 重算最后一步确认；若能量差 > 10 kcal/mol，不要使用该构型的频率与自由能。"
+    action: human_review
+
+  - id: D-09
+    category: D-数值一致性
+    severity: major
+    title: 自由能高于零点能校正后的电子能
+    tag: "[C]"
+    requires: [zpe_energy, gibbs_energy]
+    when: "d.gibbs_energy - d.zpe_energy > 0.001"
+    evidence: "E+ZPE = {zpe_energy} Ha，G = {gibbs_energy} Ha，G 反而高 {gibbs_minus_zpe_kcal} kcal/mol。"
+    fix: "G = E+ZPE+E_therm−TS 必然低于 E+ZPE（除非温度接近 0 K）。出现倒挂说明取错了字段、混用了不同温度/同位素设置，或频率里有虚频污染了熵项。先查 freq 段温度与压强设置。"
+    action: human_review
+
+  # ---------------- E 流程完整性 ----------------
+  - id: E-01
+    category: E-流程完整性
+    severity: minor
+    title: 做了优化但没有频率验证
+    tag: "[Q]"
+    applies: "'opt' in d.stages"
+    requires: [stages]
+    when: "'opt' in d.stages and 'freq' not in d.stages and d.opt_converged"
+    evidence: "阶段 = {stages_s}。优化收敛不等于落在极小值。"
+    fix: "补一步 freq（同一级别、同一网格）。没有频率就没有 ZPE、没有热校正，也无法排除鞍点。"
+    action: human_review
+
+  - id: E-02
+    category: E-流程完整性
+    severity: major
+    title: 正常终止但没有取到任何能量
+    tag: "[M]"
+    requires: [normal_termination]
+    when: "d.normal_termination and not d.scf_energies"
+    evidence: "文件宣告 Normal termination，但全文没有 SCF Done 记录。"
+    fix: "多半是 link1 里只跑了 pm6/mm 等非 SCF 步骤，或解析器漏抓。人工确认最后一步是不是真的产生了电子能。"
+    action: human_review
+
+  - id: E-03
+    category: E-流程完整性
+    severity: critical
+    title: 原子数与元素列表不一致
+    tag: "[C]"
+    requires: [natoms, atomic_numbers]
+    when: "d.natoms != len(d.atomic_numbers)"
+    evidence: "NAtoms = {natoms}，但取到 {n_elems} 个原子。"
+    fix: "输入结构可能含虚原子/鬼原子，或多个几何块串了。先确认解析到的是不是同一个 job 的几何。"
+    action: human_review
+
+  - id: E-04
+    category: E-流程完整性
+    severity: critical
+    title: 电子数与多重度奇偶性矛盾
+    tag: "[M]"
+    requires: [atomic_numbers, charge, multiplicity]
+    when: "(sum(d.atomic_numbers) - d.charge - (d.multiplicity - 1)) % 2 != 0"
+    evidence: "电子数 {n_electrons}，多重度 {multiplicity}——奇数电子不可能有偶数自旋多重度。"
+    fix: "改 %chg 或 %mult。这种输入 Gaussian 有时会「算完」，但结果是废的。"
+    action: rerun
+
+  - id: E-05
+    category: E-流程完整性
+    severity: info
+    title: 未声明色散校正
+    tag: "[K]"
+    requires: [functional]
+    when: "d.dispersion is None and d.n_heavy >= 6"
+    evidence: "泛函 {functional} 未加色散校正，体系 {n_heavy} 个重原子。"
+    fix: "分子间/分子内非共价作用会被系统性低估。加 empiricaldispersion=GD3BJ（与 B3LYP、ωB97X 系列搭配良好）。非极性体系影响小，可忽略此提示。"
+    action: accept
+
+  - id: E-06
+    category: E-流程完整性
+    severity: major
+    title: 出现过异常终止却又宣告正常结束
+    tag: "[M]"
+    requires: [normal_termination]
+    when: "d.normal_termination and d.error_terminations"
+    evidence: "全文有 {n_err} 条异常终止记录，但最终仍打印了 Normal termination（共 {n_jobs} 个 link1 作业）：{err}"
+    fix: "多段作业里前一段崩了、后面的段照跑完，是很常见的陷阱——最终状态是「成功」，但你要的结果可能属于崩掉的那一段。按 error_blocks 里的 link 号定位到具体阶段，确认该阶段的结果是否被后续覆盖或缺失。"
+    action: human_review
+
+  - id: E-07
+    category: E-流程完整性
+    severity: major
+    title: 频率阶段没有产出任何振动频率
+    tag: "[M]"
+    applies: "'freq' in d.stages"
+    requires: [stages]
+    when: "'freq' in d.stages and not d.freqs"
+    evidence: "route 声明了 freq，但全文没有 Frequencies 行（阶段 = {stages_s}）。"
+    fix: "freq 只在 Hessian 解析成功后才打印频率。检查是否用了 freq=(num) 之外的中断参数、是否走的是 freq=makehind（只生成 Hessian 不算频率），或该段实际没执行。没有频率就没有虚频判据，也没有 ZPE。"
+    action: rerun
+
+  - id: E-08
+    category: E-流程完整性
+    severity: major
+    title: 多段 link1 之间方法或基组不一致
+    tag: "[M]"
+    # 「文件里有多段」本身不是问题：opt freq 一定会拆成两段，每份正常日志都会响，
+    # 那是噪音不是发现。真正该报的是段与段之间换了方法/基组 —— opt 用 STO-3G
+    # 搜几何、freq 用 6-31G(d) 算 Hessian，频率和几何根本不自洽。
+    #
+    # applies 而不是 when 判「单段作业」：单段作业压根没有跨段一致性问题，
+    # 属于不适用（na，不计入覆盖率分母），不是「缺数据判不了」。
+    applies: "d.n_jobs >= 2"
+    requires: [route_methods]
+    when: "n_route_methods >= 2"
+    evidence: "文件内 {n_jobs} 段 link1，各段 route 声明的方法/基组依次为 {route_methods_s}（去重后 {n_route_methods} 种）。"
+    fix: "末段结论只对本段的方法/基组负责。频率、热化学量、单点能都依赖特定方法，跨段换方法会让它们与几何互不自洽——尤其 opt 用低成本泛函收几何、再用高成本方法算单点这种「省机器时间」的做法，必须显式拆成两个文件并分阶段校验，不能只在一份日志里看最终状态。"
+    action: human_review
+
+
+# =============================================================================
+# 跨文件一致性规则（本系统相对所有开源工具的真正增量）
+#
+# 所有开源工具（QMCert / atomate / AiiDA）都只做「单次计算自检」。
+# 但真实工作流是 opt -> sp -> freq 串起来的，各阶段的能量必须自洽。
+# 用法：qchem-eval compare opt.log sp.log
+# =============================================================================
+pair_rules:
+  - id: D-05
+    category: D-数值一致性
+    severity: major
+    title: 跨阶段能量不一致
+    tag: "[M]"
+    tol_kcal: 1.0
+    fix: "两个文件的能量本该相等（同一构型的单点能 / 同一几何的频率能）。差这么多说明：阶段之间换了泛函或基组、中间手动改过结构、或者第二次 SCF 找到了不同的解。回查各自的 route 行。"
+
+  - id: D-06
+    category: D-数值一致性
+    severity: critical
+    title: 跨阶段方法不一致
+    tag: "[M]"
+    fix: "opt 与 sp/freq 必须同级别，否则能量差里混进了方法差，后续所有热化学比较都失去意义（除非这是有意的 ONIOM/多保真度设计）。"
